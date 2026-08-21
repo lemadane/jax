@@ -1,4 +1,4 @@
-# Json2Record
+# JSON-And-XML-To-Record
 
 Production-ready, zero-dependency standard Java 17+ library for bi-directional mapping between JSON and XML documents and strongly typed Java records.
 
