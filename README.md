@@ -1,19 +1,21 @@
 # JAX — JSON-And-XML to Java Object Converter API.
 
-Map JSON and XML to Java records and POJOs, and serialize them back with one small API. JAX runs on **Java 17+** with **zero runtime dependencies**.
+Generate Java records and POJOs from JSON or XML samples, then use them to read and write your documents with one small API. JAX runs on **Java 17+** with **zero runtime dependencies**.
 
 ## Features
 
-1. **JSON and XML mapping** — read and write records and POJOs with automatic input-format detection.
-2. **Strict and partial mapping** — validate record structure or select only the fields your application needs.
-3. **Typed, nested data** — work with nested objects, lists, arrays, enums, optional values, and precise numeric types.
-4. **Input safeguards and clear errors** — bounded nesting and numeric conversion, XML external-entity protection, and mapping errors with field paths.
-5. **Schema-free JSON** — read JSON into an insertion-ordered `Document` without declaring a Java model.
-6. **XML attributes and special names** — map instance attributes and encode namespace prefixes or special characters in Java identifiers.
-7. **Source generation** — generate records or POJOs from sample JSON and XML using the CLI.
+1. **Source generation** — generate records or POJOs from sample JSON and XML using the CLI.
+2. **JSON and XML mapping** — read and write records and POJOs with automatic input-format detection.
+3. **Strict and partial mapping** — validate record structure or select only the fields your application needs.
+4. **Typed, nested data** — work with nested objects, lists, arrays, enums, optional values, and precise numeric types.
+5. **Input safeguards and clear errors** — bounded nesting and numeric conversion, XML external-entity protection, and mapping errors with field paths.
+6. **Schema-free JSON** — read JSON into an insertion-ordered `Document` without declaring a Java model.
+7. **XML attributes and special names** — map instance attributes and encode namespace prefixes or special characters in Java identifiers.
 
 ## Contents
 
+- [Generate Java classes from JSON or XML](#generate-java-classes-from-json-or-xml)
+- [Troubleshooting](#troubleshooting)
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Public API](#public-api)
@@ -24,25 +26,318 @@ Map JSON and XML to Java records and POJOs, and serialize them back with one sma
 - [XML attributes and namespaces](#xml-attributes-and-namespaces)
 - [Mapping examples](#mapping-examples)
 - [Safeguards and errors](#safeguards-and-errors)
-- [Command-line source generation](#command-line-source-generation)
 - [Build and test](#build-and-test)
 - [Performance benchmarks](#performance-benchmarks)
+
+## Generate Java classes from JSON or XML
+
+Start with a sample document and let JAX create the Java model. The CLI accepts a UTF-8 `.json` or `.xml` **file path**. If your data is already a Java string, save it to a file first, as shown below.
+
+### 1. Check prerequisites and build the JAR
+
+Build the JAR from source using **JDK 17 or later**. The repository includes the Gradle wrapper, so a separate Gradle installation is not required. The first build needs internet access to download Gradle and build dependencies.
+
+Check that Git and a JDK are available. Both Java commands should report version 17 or later:
+
+```shell
+git --version
+java -version
+javac -version
+```
+
+Clone the repository and build it:
+
+```shell
+git clone https://github.com/lemadane/jax.git
+cd jax
+./gradlew jar
+```
+
+If you already have a checkout, run `./gradlew jar` from its root directory. On Windows Command Prompt, use `gradlew.bat jar`; in PowerShell, use `.\gradlew.bat jar`.
+
+The executable JAR is created at:
+
+```text
+build/libs/jax-0.2.0-SNAPSHOT.jar
+```
+
+Use this main JAR for source generation; `-sources.jar` and `-javadoc.jar` artifacts are documentation artifacts, not the CLI. The executable JAR has no third-party runtime dependencies and can be copied to another directory or machine with Java 17+ installed.
+
+For an existing sample file, the command format is:
+
+```shell
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo /path/to/order.xml
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create record /path/to/customer.json
+```
+
+If you move the JAR, replace `build/libs/jax-0.2.0-SNAPSHOT.jar` with its new path. Generated Java files are written beside the input file, so that directory must be writable.
+
+### 2. Choose the model style
+
+| Style | Generated model | When to use it |
+| --- | --- | --- |
+| `record` | Records with nested records | JSON or XML without attributes |
+| `pojo` | Mutable classes with getters and annotated setters | XML with attributes, or models you need to modify |
+| `with-constructor` | Mutable classes with no-argument and all-fields constructors | The same data as `pojo`, with constructor-based initialization |
+
+### 3. Follow the XML or JSON walkthrough
+
+Keep your terminal in the repository root for every command below. Choose either walkthrough; each is independent after building the JAR.
+
+#### XML file with attributes
+
+**Step 1 — Create the sample file.** Start JShell from the repository root:
+
+```shell
+jshell
+```
+
+Paste the following Java snippet into JShell. It writes `order.xml` in the current directory:
+
+```java
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+String xml = """
+        <Order id="A100" version="1">
+            <customer>Ada</customer>
+            <item sku="B1">
+                <name>Notebook</name>
+                <quantity>2</quantity>
+            </item>
+            <item sku="P2">
+                <name>Pen</name>
+                <quantity>3</quantity>
+            </item>
+        </Order>
+        """;
+Files.writeString(Path.of("order.xml"), xml);
+```
+
+Exit JShell to return to your terminal:
+
+```text
+/exit
+```
+
+**Step 2 — Generate the class.** Run:
+
+```shell
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo order.xml
+```
+
+This creates `Order.java` beside `order.xml`. The following excerpt shows the generated fields; the complete output also includes public getters and `@JsonProperty` setters:
+
+```java
+import com.lemadane.jax.XmlAttribute;
+import java.util.List;
+
+public class Order {
+    @XmlAttribute("id") String id;
+    @XmlAttribute("version") int version;
+    String customer;
+    List<Item> item;
+
+    public static class Item {
+        @XmlAttribute("sku") String sku;
+        String name;
+        int quantity;
+        // Generated getters and setters omitted here.
+    }
+    // Generated getters and setters omitted here.
+}
+```
+
+Root and nested attributes become `@XmlAttribute` instance fields. Repeated `<item>` elements become a `List<Item>`, and nested elements become nested Java classes. Use `pojo` or `with-constructor` for this input: `record` generation rejects XML attributes because record mapping does not populate per-instance attributes.
+
+**Step 3 — Create the application.** Save this complete example as `XmlExample.java` in the repository root. Use the actual generated `Order.java`, not the shortened excerpt above:
+
+```java
+import com.lemadane.jax.Jax;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class XmlExample {
+    public static void main(String[] args) throws Exception {
+        Order order = Jax.toObject(Files.readString(Path.of("order.xml")), Order.class);
+        System.out.println(order.id());
+        System.out.println(order.item().get(0).sku());
+        Files.writeString(Path.of("order-output.xml"), Jax.toXml(order));
+    }
+}
+```
+
+**Step 4 — Compile and run.** On Linux or macOS:
+
+```shell
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Order.java XmlExample.java
+java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" XmlExample
+```
+
+On Windows (Command Prompt or PowerShell):
+
+```shell
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Order.java XmlExample.java
+java -cp ".;build/libs/jax-0.2.0-SNAPSHOT.jar" XmlExample
+```
+
+**Step 5 — Check the result.** The console prints:
+
+```text
+A100
+B1
+```
+
+The application also creates `order-output.xml`. It retains the mapped `id`, `version`, and `sku` attributes. Formatting and attribute order may differ from the input.
+
+#### JSON file with nested data
+
+**Step 1 — Create the sample file.** From the repository root, start JShell:
+
+```shell
+jshell
+```
+
+Paste this Java snippet to write `customer.json`:
+
+```java
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+String json = """
+        {
+            "name": "Ada",
+            "age": 37,
+            "address": {
+                "city": "London"
+            }
+        }
+        """;
+Files.writeString(Path.of("customer.json"), json);
+```
+
+Exit JShell to return to your terminal:
+
+```text
+/exit
+```
+
+**Step 2 — Generate a record.** Run:
+
+```shell
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create record customer.json
+```
+
+This creates `Customer.java`:
+
+```java
+public record Customer(String name, int age, Address address) {
+    public record Address(String city) {}
+}
+```
+
+**Step 3 — Create the application.** Save this complete example as `JsonExample.java` in the repository root:
+
+```java
+import com.lemadane.jax.Jax;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class JsonExample {
+    public static void main(String[] args) throws Exception {
+        Customer customer = Jax.toObject(
+                Files.readString(Path.of("customer.json")), Customer.class);
+        System.out.println(customer.address().city());
+        Files.writeString(Path.of("customer-output.json"), Jax.toJson(customer));
+    }
+}
+```
+
+**Step 4 — Compile and run.** On Linux or macOS:
+
+```shell
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Customer.java JsonExample.java
+java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" JsonExample
+```
+
+On Windows (Command Prompt or PowerShell):
+
+```shell
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Customer.java JsonExample.java
+java -cp ".;build/libs/jax-0.2.0-SNAPSHOT.jar" JsonExample
+```
+
+**Step 5 — Check the result.** The console prints:
+
+```text
+London
+```
+
+The application also creates `customer-output.json` with the customer's mapped data.
+
+To generate a mutable Java class instead, choose one of these commands **instead of** the record command in Step 2. Run only one generation command per input file; the CLI refuses to overwrite `Customer.java`:
+
+```shell
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo customer.json
+# Or include an all-fields constructor:
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create with-constructor customer.json
+```
+
+### Generation conventions
+
+- The input filename determines the top-level Java name: `order.xml` produces `Order.java`. For strict XML mapping, choose a filename that produces a class name matching the root element.
+- Generated files are written beside the input with no package declaration. Move them into your application and add its package declaration as needed. Existing Java files are never overwritten.
+- Types are inferred from the sample. Review the generated model for values the sample does not cover, especially identifiers that must remain strings.
+- Nested objects become nested types; JSON arrays and repeated XML elements become `List` properties.
+- Mutable classes have `name()` getters and `name(value)` setters annotated with `@JsonProperty`. Compile constructor-bound classes with `-parameters` so JAX can match constructor arguments.
+- XML prefixes and special characters use the [name-encoding convention](#special-character-encoding), such as `$colon$` for `:` and `$hyphen$` for `-`.
+
+### Troubleshooting
+
+| Problem | What to check or change |
+| --- | --- |
+| `java`, `javac`, or `jshell` is not found | Install a JDK 17+ and put its `bin` directory on `PATH`. Check that `java -version` and `javac -version` use the intended JDK. |
+| `./gradlew: Permission denied` | On Linux/macOS, run `chmod +x gradlew`, then retry. |
+| `Unable to access jarfile` | Run `./gradlew jar` from the repository root and check the JAR path. Quote paths containing spaces. |
+| Input file cannot be found | Check the current directory or use an absolute path ending in `.json` or `.xml`. |
+| Generated Java file already exists | Move or rename the existing generated file before regenerating. Preserve any manual edits. |
+| `package com.lemadane.jax does not exist` or `NoClassDefFoundError` | Include the JAX JAR with `-cp` when compiling and running. Runtime classpaths above include both `.` and the JAR. |
+| Main class cannot be found | Run from the directory containing the compiled classes; use `:` between classpath entries on Linux/macOS and `;` on Windows. |
+| XML root-name mismatch | Match the generated top-level class name to the XML root, using the documented encoding for special characters. |
+| Record generation rejects XML attributes | Use `pojo` or `with-constructor`. |
 
 ## Installation
 
 Requires **Java 17 or later**. Coordinates: `com.lemadane:jax:0.2.0-SNAPSHOT`.
 
-The dependency declarations below require a repository containing the artifact. To use a local checkout, run `./gradlew publishToMavenLocal` and add `mavenLocal()` to your Gradle repositories; Maven uses its local repository automatically.
+The CLI walkthroughs above use the JAR directly. To use JAX as a dependency in another application, follow these steps.
+
+**Step 1 — Publish to your local Maven repository.** From the JAX checkout, run:
+
+```shell
+./gradlew publishToMavenLocal
+```
+
+On Windows Command Prompt use `gradlew.bat publishToMavenLocal`; in PowerShell use `.\gradlew.bat publishToMavenLocal`.
+
+**Step 2 — Configure your consuming application.** Choose Gradle or Maven below. This local installation does not require a published Maven Central artifact.
 
 ### Gradle (Groovy DSL)
 
 ```groovy
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
 dependencies {
     implementation 'com.lemadane:jax:0.2.0-SNAPSHOT'
 }
 ```
 
 ### Maven
+
+Add this dependency inside your application’s `pom.xml` `<dependencies>` element. Maven checks the local repository automatically.
 
 ```xml
 <dependency>
@@ -54,7 +349,7 @@ dependencies {
 
 ## Quick start
 
-Save this example as `Example.java` and run it with JAX on the classpath:
+Save this complete example as `Example.java` in the JAX repository root after building the JAR:
 
 ```java
 import com.lemadane.jax.Jax;
@@ -93,6 +388,17 @@ public class Example {
     }
 }
 ```
+
+Compile and run on Linux/macOS:
+
+```shell
+javac -cp build/libs/jax-0.2.0-SNAPSHOT.jar Example.java
+java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" Example
+```
+
+On Windows, use the same compile command and run `java -cp ".;build/libs/jax-0.2.0-SNAPSHOT.jar" Example`. The output shows `true`, the JSON and XML representations, and `Person[name=Ada, age=0]`.
+
+The reference snippets below show individual declarations or usage fragments unless labeled as complete examples. Place statements inside a method, and put each public top-level type in its own matching `.java` file. Include the relevant imports and keep the JAX JAR on the classpath.
 
 Use `toObject` when every record component must be present. Use `toPartialObject` when input contains extra fields or only part of the record.
 
@@ -167,7 +473,7 @@ Import `com.lemadane.jax.JsonProperty` to opt in setter methods for either JSON 
 For constructor-bound classes, compile the class with `-parameters` so Jax can match constructor arguments to input property names:
 
 ```shell
-javac -parameters Person.java
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Person.java
 ```
 
 For XML-to-POJO mapping, use public fields or public one-argument setters annotated with `@JsonProperty`, named after the property (`name(String value)`) or using JavaBean naming (`setName(String value)`):
@@ -286,7 +592,9 @@ XML collection serialization uses the reserved attributes `jax-empty-list="true"
 
 ### Special-character encoding
 
-XML element/attribute names and JSON keys containing characters problematic in Java identifiers are reversibly escaped using `$` as the marker:
+JAX uses `DataNameCodec` to represent external names as Java identifiers. When reading XML, it matches element names against decoded Java type and property names; when writing XML, it decodes those identifiers back to the original names. The same convention applies to JSON keys and XML attribute names.
+
+For example, `<fxg:first-name>` maps to `fxg$colon$first$hyphen$name`: `:` becomes `$colon$`, and `-` becomes `$hyphen$`. These escapes preserve the original name instead of removing punctuation.
 
 | External Character | Reversible Identifier Escape | Example External Name | Encoded Java Component / Type |
 | :--- | :--- | :--- | :--- |
@@ -297,11 +605,62 @@ XML element/attribute names and JSON keys containing characters problematic in J
 | `$` | `$dollar$` | `price$value` | `price$dollar$value` |
 | Other | `$uXXXX$` | `emoji_😀` | `emoji_$u1F600$` |
 
+
+The space and dollar-sign rows illustrate the shared codec for JSON keys; they are not valid XML element-name characters. Encoding a Java identifier does not make an invalid XML name valid. Other characters that cannot appear in a Java identifier use a hexadecimal Unicode escape such as `$u1F600$`; characters already valid in Java identifiers are preserved.
+
+#### Reading prefixed elements
+
+Use the encoded name for both the root record type and its components. This complete example combines a namespace prefix, a hyphen, and a dot:
+
+```java
+import com.lemadane.jax.Jax;
+import com.lemadane.jax.naming.DataNameCodec;
+
+public class XmlNamesExample {
+    public record fxg$colon$Person(
+            String fxg$colon$first$hyphen$name,
+            String account$dot$id) {}
+
+    public static void main(String[] args) {
+        String xml = """
+                <fxg:Person xmlns:fxg="urn:example">
+                    <fxg:first-name>Ada</fxg:first-name>
+                    <account.id>A123</account.id>
+                </fxg:Person>
+                """;
+
+        var person = Jax.toObject(xml, fxg$colon$Person.class);
+        System.out.println(person.fxg$colon$first$hyphen$name()); // Ada
+        System.out.println(person.account$dot$id());             // A123
+
+        System.out.println(DataNameCodec.encode("fxg:first-name"));
+        // fxg$colon$first$hyphen$name
+        System.out.println(DataNameCodec.decode("fxg$colon$first$hyphen$name"));
+        // fxg:first-name
+    }
+}
+```
+
+JAX matches the qualified name, including its prefix. For this model, use `fxg:first-name`; changing it to `other:first-name` does not match even if both prefixes refer to the same namespace URI. Declare each prefix with `xmlns:prefix` in the XML input.
+
+#### Writing prefixed elements
+
+The writer restores `:` and other encoded characters, but it also needs a namespace declaration for each prefix. For a POJO, supply the declaration through an instance field such as:
+
+```java
+@XmlAttribute("xmlns:fxg")
+public String namespace = "urn:example";
+```
+
+Place that field on the POJO being serialized with prefixed names. Records do not supply namespace declarations through static fields, so the record above demonstrates reading only; calling `toXml(person)` without a supported namespace declaration raises `XmlMappingException`.
+
 ## Mapping examples
 
 The following snippets show model declarations and usage for larger documents. Add the relevant `Jax` and `java.util.List` imports in your application.
 
 ### 1. Standard XML Mapping
+
+This hand-written record model maps child elements only. The `Version` attributes in the input are ignored and will not appear in `outputXml`. To preserve attributes, use the POJO generation walkthrough above.
 
 **XML Input:**
 
@@ -475,30 +834,6 @@ Example rich path messages:
 * `Excess JSON property "table" at $.table. No matching record component exists in com.example.KitchenOrderScan.`
 
 * `Cannot convert JSON value "abc" to int for com.example.OrderData.itemCount at $.itemCount.`
-
-## Command-line source generation
-
-The executable JAR can generate a Java record, mutable POJO, or mutable POJO with an all-fields
-constructor from a JSON or XML sample. The generated source is written beside the input file, named
-from the input filename, and has no package declaration so you can move it to your chosen package.
-It refuses to overwrite an existing Java source file.
-
-```shell
-./gradlew jar
-
-java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create record person.xml
-java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo person.json
-java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create with-constructor person.json
-```
-
-Generated mutable classes have `name()` getters and `name(value)` setters (without `get`/`set`
-prefixes). POJOs use a no-argument constructor; `with-constructor` also generates an all-fields
-constructor. Nested objects become nested Java types, repeated XML elements and JSON arrays become
-`List` properties, and XML attributes are marked with `@XmlAttribute`. For XML mapping with
-`Jax.toObject`, compile constructor-bound classes with `-parameters`, or use the generated no-arg
-constructor and setters. XML samples with attributes cannot be generated as records because record
-mapping does not populate per-instance attributes; choose `pojo` or `with-constructor` to preserve
-them as instance properties.
 
 ## Build and test
 
