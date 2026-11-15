@@ -1,4 +1,4 @@
-# JAX — JSON-And-XML-To-Record
+# JAX — JSON-And-XML to Java Object Converter API.
 
 Map JSON and XML to Java records and POJOs, and serialize them back with one small API. JAX runs on **Java 17+** with **zero runtime dependencies**.
 
