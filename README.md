@@ -64,16 +64,31 @@ public class Example {
 
     public static void main(String[] args) {
         Person fromJson = Jax.toObject(
-                "{\"name\":\"Ada\",\"age\":37}", Person.class);
+                """
+                {
+                    "name": "Ada",
+                    "age": 37
+                }
+                """, Person.class);
         Person fromXml = Jax.toObject(
-                "<Person><name>Ada</name><age>37</age></Person>", Person.class);
+                """
+                <Person>
+                    <name>Ada</name>
+                    <age>37</age>
+                </Person>
+                """, Person.class);
 
         System.out.println(fromJson.equals(fromXml)); // true
         System.out.println(Jax.toJson(fromXml));      // {"name":"Ada","age":37}
         System.out.println(Jax.toXml(fromJson));      // XML with a Person root
 
         Person partial = Jax.toPartialObject(
-                "{\"name\":\"Ada\",\"extra\":true}", Person.class);
+                """
+                {
+                    "name": "Ada",
+                    "extra": true
+                }
+                """, Person.class);
         System.out.println(partial);                 // Person[name=Ada, age=0]
     }
 }
@@ -139,7 +154,12 @@ public class Person {
     public void age(int value) { age = value; }
 }
 
-Person person = Jax.toObject("{\"name\":\"Ada\",\"age\":37}", Person.class);
+Person person = Jax.toObject("""
+    {
+        "name": "Ada",
+        "age": 37
+    }
+    """, Person.class);
 ```
 
 Import `com.lemadane.jax.JsonProperty` to opt in setter methods for either JSON or XML mapping. This restriction applies consistently regardless of the input format detected by `Jax.toObject`.
@@ -164,7 +184,15 @@ public class AddressXml {
 }
 
 PersonXml personFromXml = Jax.toObject(
-        "<PersonXml><name>Ada</name><age>37</age><address><city>London</city></address></PersonXml>",
+        """
+        <PersonXml>
+            <name>Ada</name>
+            <age>37</age>
+            <address>
+                <city>London</city>
+            </address>
+        </PersonXml>
+        """,
         PersonXml.class);
 ```
 
@@ -176,7 +204,11 @@ public class fxg$colon$Person {
 }
 
 fxg$colon$Person person = Jax.toObject(
-        "<fxg:Person xmlns:fxg=\"urn:example\"><fxg:first-name>Ada</fxg:first-name></fxg:Person>",
+        """
+        <fxg:Person xmlns:fxg="urn:example">
+            <fxg:first-name>Ada</fxg:first-name>
+        </fxg:Person>
+        """,
         fxg$colon$Person.class);
 ```
 
@@ -205,7 +237,15 @@ Import `com.lemadane.jax.Document` for schema-free JSON access.
 `toDocument(json)` returns Jax's own insertion-ordered `Document`, a map from JSON property names to inferred Java values. Nested objects become `Document` instances, arrays become lists, and JSON primitives become `String`, `Boolean`, `Integer`, `Long`, `BigDecimal`, or `null`. Integral numbers infer to `Integer`, then `Long`, and otherwise `BigDecimal`; decimal or exponent-form numbers infer to `BigDecimal`.
 
 ```java
-Document document = Jax.toDocument("{\"name\":\"Ada\",\"age\":37,\"address\":{\"city\":\"London\"}}");
+Document document = Jax.toDocument("""
+    {
+        "name": "Ada",
+        "age": 37,
+        "address": {
+            "city": "London"
+        }
+    }
+    """);
 String name = (String) document.get("name");
 int age = (Integer) document.get("age");
 Document address = (Document) document.get("address");
@@ -230,7 +270,11 @@ public class PersonXml {
 }
 
 PersonXml person = Jax.toObject(
-        "<PersonXml id=\"A1\" xml:version=\"1\"><name>Ada</name></PersonXml>",
+        """
+        <PersonXml id="A1" xml:version="1">
+            <name>Ada</name>
+        </PersonXml>
+        """,
         PersonXml.class);
 ```
 
@@ -261,21 +305,23 @@ The following snippets show model declarations and usage for larger documents. A
 
 **XML Input:**
 
-```xml
-<RestaurantOrderEvent Version="1.0">
-    <KitchenOrderScan Version="1.0">
-        <RestaurantID>0603</RestaurantID>
-        <OrderType>DineIn</OrderType>
-        <OrderTicketNumber>9611019061319607196193</OrderTicketNumber>
-        <OrderTimestamp>
-            <Date>20260721</Date>
-            <Time24hr>123045</Time24hr>
-            <Microseconds>527412</Microseconds>
-        </OrderTimestamp>
+```java
+String xml = """
+    <RestaurantOrderEvent Version="1.0">
+        <KitchenOrderScan Version="1.0">
+            <RestaurantID>0603</RestaurantID>
+            <OrderType>DineIn</OrderType>
+            <OrderTicketNumber>9611019061319607196193</OrderTicketNumber>
+            <OrderTimestamp>
+                <Date>20260721</Date>
+                <Time24hr>123045</Time24hr>
+                <Microseconds>527412</Microseconds>
+            </OrderTimestamp>
+            <PlaceHolder/>
+        </KitchenOrderScan>
         <PlaceHolder/>
-    </KitchenOrderScan>
-    <PlaceHolder/>
-</RestaurantOrderEvent>
+    </RestaurantOrderEvent>
+    """;
 ```
 
 **Java Records:**
@@ -315,12 +361,14 @@ final String outputXml = Jax.toXml(event);
 
 **XML Input:**
 
-```xml
-<rest:RestaurantOrderEvent xmlns:rest="urn:restaurant:kitchen">
-    <rest:KitchenOrderScan>
-        <rest:RestaurantID>0603</rest:RestaurantID>
-    </rest:KitchenOrderScan>
-</rest:RestaurantOrderEvent>
+```java
+String xml = """
+    <rest:RestaurantOrderEvent xmlns:rest="urn:restaurant:kitchen">
+        <rest:KitchenOrderScan>
+            <rest:RestaurantID>0603</rest:RestaurantID>
+        </rest:KitchenOrderScan>
+    </rest:RestaurantOrderEvent>
+    """;
 ```
 
 **Java Records:**
@@ -350,20 +398,22 @@ namespace is supplied by another supported mapping path, such as a POJO `@XmlAtt
 
 **JSON Input:**
 
-```json
-{
-  "eventMessageCount": 2,
-  "kitchenOrderScans": [
+```java
+String json = """
     {
-      "restaurantID": "0603",
-      "orderType": "DineIn"
-    },
-    {
-      "restaurantID": "0417",
-      "orderType": "Takeout"
+      "eventMessageCount": 2,
+      "kitchenOrderScans": [
+        {
+          "restaurantID": "0603",
+          "orderType": "DineIn"
+        },
+        {
+          "restaurantID": "0417",
+          "orderType": "Takeout"
+        }
+      ]
     }
-  ]
-}
+    """;
 ```
 
 **Java Records:**
