@@ -1,16 +1,18 @@
-name: Java CI & Package Publishing
+name: Java CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
   release:
     types: [ published ]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -27,12 +29,26 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build, Test & Verify Line Coverage
-        run: ./gradlew clean test jacocoTestReport jacocoTestCoverageVerification checkstyleMain checkstyleTest build
+        run: ./gradlew --no-daemon clean build jacocoTestCoverageVerification
+
+      - name: Upload test, coverage, and Checkstyle reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-reports
+          path: |
+            build/reports/
+            build/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
   publish-github-packages:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout repository

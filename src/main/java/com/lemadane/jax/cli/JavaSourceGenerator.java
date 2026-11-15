@@ -181,48 +181,51 @@ final class JavaSourceGenerator {
 
     try {
       XMLStreamReader reader = factory.createXMLStreamReader(new java.io.StringReader(input));
-      ArrayDeque<XmlNode> stack = new ArrayDeque<>();
-      XmlNode root = null;
-      while (reader.hasNext()) {
-        int event = reader.next();
-        if (event == XMLStreamConstants.DTD) {
-          throw new XMLStreamException("DOCTYPE declarations are disallowed");
-        }
-        if (event == XMLStreamConstants.START_ELEMENT) {
-          XmlNode node = new XmlNode(qualifiedName(reader.getPrefix(), reader.getLocalName()));
-          for (int i = 0; i < reader.getAttributeCount(); i++) {
-            node.attributes.put(qualifiedName(reader.getAttributePrefix(i), reader.getAttributeLocalName(i)),
-                reader.getAttributeValue(i));
+      try {
+        ArrayDeque<XmlNode> stack = new ArrayDeque<>();
+        XmlNode root = null;
+        while (reader.hasNext()) {
+          int event = reader.next();
+          if (event == XMLStreamConstants.DTD) {
+            throw new XMLStreamException("DOCTYPE declarations are disallowed");
           }
-          if (stack.isEmpty()) {
-            if (root != null) {
-              throw new XMLStreamException("Multiple document elements");
+          if (event == XMLStreamConstants.START_ELEMENT) {
+            XmlNode node = new XmlNode(qualifiedName(reader.getPrefix(), reader.getLocalName()));
+            for (int i = 0; i < reader.getAttributeCount(); i++) {
+              node.attributes.put(qualifiedName(reader.getAttributePrefix(i), reader.getAttributeLocalName(i)),
+                  reader.getAttributeValue(i));
             }
-            root = node;
-          } else {
-            stack.peek().children.add(node);
-          }
-          stack.push(node);
-        } else if (event == XMLStreamConstants.END_ELEMENT) {
-          if (stack.isEmpty()) {
-            throw new XMLStreamException("Unexpected end element");
-          }
-          stack.pop();
-        } else if (event == XMLStreamConstants.CHARACTERS || event == XMLStreamConstants.CDATA
-            || event == XMLStreamConstants.SPACE) {
-          if (!stack.isEmpty()) {
-            stack.peek().text.append(reader.getText());
+            if (stack.isEmpty()) {
+              if (root != null) {
+                throw new XMLStreamException("Multiple document elements");
+              }
+              root = node;
+            } else {
+              stack.peek().children.add(node);
+            }
+            stack.push(node);
+          } else if (event == XMLStreamConstants.END_ELEMENT) {
+            if (stack.isEmpty()) {
+              throw new XMLStreamException("Unexpected end element");
+            }
+            stack.pop();
+          } else if (event == XMLStreamConstants.CHARACTERS || event == XMLStreamConstants.CDATA
+              || event == XMLStreamConstants.SPACE) {
+            if (!stack.isEmpty()) {
+              stack.peek().text.append(reader.getText());
+            }
           }
         }
+        if (root == null || !stack.isEmpty()) {
+          throw new XMLStreamException("XML document has no complete root element");
+        }
+        if (root.children.isEmpty() && !root.text.toString().isBlank()) {
+          throw new DataMappingException("A text-only XML root cannot be mapped to a generated class.");
+        }
+        return xmlObject(className, root);
+      } finally {
+        reader.close();
       }
-      reader.close();
-      if (root == null || !stack.isEmpty()) {
-        throw new XMLStreamException("XML document has no complete root element");
-      }
-      if (root.children.isEmpty() && !root.text.toString().isBlank()) {
-        throw new DataMappingException("A text-only XML root cannot be mapped to a generated class.");
-      }
-      return xmlObject(className, root);
     } catch (XMLStreamException | IllegalArgumentException e) {
       throw new DataMappingException("Failed to parse XML sample: " + e.getMessage(), e);
     }

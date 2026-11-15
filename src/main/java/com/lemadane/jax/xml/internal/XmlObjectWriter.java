@@ -25,6 +25,8 @@ import com.lemadane.jax.reflect.PojoPropertyReader;
 */
 public final class XmlObjectWriter {
 
+  static final int MAX_SERIALIZATION_DEPTH = 256;
+
   XmlObjectWriter() {
   }
 
@@ -50,16 +52,21 @@ public final class XmlObjectWriter {
   }
 
   static XmlElement toElement(Object object, String elementName, Set<Object> visited) {
+    return toElement(object, elementName, visited, 1);
+  }
+
+  static XmlElement toElement(Object object, String elementName, Set<Object> visited, int depth) {
+    requireDepth(depth);
     if (!visited.add(object)) {
       throw new XmlMappingException("Cycle detected in object graph for " + object.getClass().getName());
     }
     try {
       XmlElement element = new XmlElement(elementName);
       if (object instanceof Record record) {
-        appendRecordProperties(record, element, visited);
+        appendRecordProperties(record, element, visited, depth);
       } else {
         appendPojoAttributes(object, element);
-        appendPojoProperties(object, element, visited);
+        appendPojoProperties(object, element, visited, depth);
       }
       return element;
     } finally {
@@ -98,6 +105,11 @@ public final class XmlObjectWriter {
   }
 
   static void appendRecordProperties(Record record, XmlElement parent, Set<Object> visited) {
+    appendRecordProperties(record, parent, visited, 1);
+  }
+
+  static void appendRecordProperties(Record record, XmlElement parent, Set<Object> visited, int depth) {
+    requireDepth(depth);
     RecordMetadata metadata = RecordIntrospector.inspect(record.getClass());
     for (RecordMetadata.ComponentMetadata component : metadata.components()) {
       Object value;
@@ -109,15 +121,20 @@ public final class XmlObjectWriter {
             e
         );
       }
-      appendProperty(parent, component.decodedName(), value, visited);
+      appendProperty(parent, component.decodedName(), value, visited, depth + 1);
     }
   }
 
   static void appendPojoProperties(Object object, XmlElement parent, Set<Object> visited) {
+    appendPojoProperties(object, parent, visited, 1);
+  }
+
+  static void appendPojoProperties(Object object, XmlElement parent, Set<Object> visited, int depth) {
+    requireDepth(depth);
     try {
       for (PojoPropertyReader.Property property : PojoPropertyReader.read(object)) {
         if (!isXmlAttribute(object.getClass(), property.name())) {
-          appendProperty(parent, DataNameCodec.decode(property.name()), property.value(), visited);
+          appendProperty(parent, DataNameCodec.decode(property.name()), property.value(), visited, depth + 1);
         }
       }
     } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
@@ -137,6 +154,11 @@ public final class XmlObjectWriter {
   }
 
   static void appendProperty(XmlElement parent, String name, Object value, Set<Object> visited) {
+    appendProperty(parent, name, value, visited, 1);
+  }
+
+  static void appendProperty(XmlElement parent, String name, Object value, Set<Object> visited, int depth) {
+    requireDepth(depth);
     if (value == null) {
       return;
     }
@@ -145,10 +167,10 @@ public final class XmlObjectWriter {
         Object innerValue = optional.get();
         if ((innerValue instanceof Collection<?> || innerValue.getClass().isArray()) && !(innerValue instanceof String)) {
           XmlElement wrapper = new XmlElement(name);
-          appendProperty(wrapper, name, innerValue, visited);
+          appendProperty(wrapper, name, innerValue, visited, depth + 1);
           parent.addChild(wrapper);
         } else {
-          appendProperty(parent, name, innerValue, visited);
+          appendProperty(parent, name, innerValue, visited, depth + 1);
         }
       } else {
         XmlElement nullOptional = new XmlElement(name);
@@ -175,10 +197,10 @@ public final class XmlObjectWriter {
             parent.addChild(nullItem);
           } else if (item instanceof Collection<?> || item.getClass().isArray()) {
             XmlElement nestedCollection = new XmlElement(name);
-            appendProperty(nestedCollection, name, item, visited);
+            appendProperty(nestedCollection, name, item, visited, depth + 1);
             parent.addChild(nestedCollection);
           } else {
-            appendProperty(parent, name, item, visited);
+            appendProperty(parent, name, item, visited, depth + 1);
           }
         }
       } finally {
@@ -206,10 +228,10 @@ public final class XmlObjectWriter {
             parent.addChild(nullItem);
           } else if (item instanceof Collection<?> || item.getClass().isArray()) {
             XmlElement nestedCollection = new XmlElement(name);
-            appendProperty(nestedCollection, name, item, visited);
+            appendProperty(nestedCollection, name, item, visited, depth + 1);
             parent.addChild(nestedCollection);
           } else {
-            appendProperty(parent, name, item, visited);
+            appendProperty(parent, name, item, visited, depth + 1);
           }
         }
       } finally {
@@ -218,11 +240,17 @@ public final class XmlObjectWriter {
       return;
     }
     if (isStructured(value)) {
-      parent.addChild(toElement(value, name, visited));
+      parent.addChild(toElement(value, name, visited, depth));
     } else {
       XmlElement child = new XmlElement(name);
       child.addText(value instanceof Enum<?> enumValue ? enumValue.name() : value.toString());
       parent.addChild(child);
+    }
+  }
+
+  static void requireDepth(int depth) {
+    if (depth > MAX_SERIALIZATION_DEPTH) {
+      throw new XmlMappingException("Maximum XML serialization depth of " + MAX_SERIALIZATION_DEPTH + " exceeded");
     }
   }
 

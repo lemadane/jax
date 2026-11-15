@@ -8,7 +8,7 @@ plugins {
 }
 
 group = 'com.lemadane'
-version = '0.1.0-SNAPSHOT'
+version = '0.2.0-SNAPSHOT'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -74,10 +74,14 @@ tasks.named('jacocoTestCoverageVerification', JacocoCoverageVerification) {
             limit {
                 counter = 'LINE'
                 value = 'COVEREDRATIO'
-                minimum = 0.90
+                minimum = 0.97
             }
         }
     }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('jacocoTestCoverageVerification')
 }
 
 checkstyle {
@@ -98,7 +102,7 @@ publishing {
             from components.java
             groupId = 'com.lemadane'
             artifactId = 'jax'
-            version = '0.1.0-SNAPSHOT'
+            version = '0.2.0-SNAPSHOT'
 
             pom {
                 name = 'jax'

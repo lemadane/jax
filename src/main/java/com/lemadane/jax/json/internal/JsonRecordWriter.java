@@ -25,6 +25,8 @@ import com.lemadane.jax.json.internal.JsonParser.JsonNode;
 */
 public final class JsonRecordWriter {
 
+  static final int MAX_SERIALIZATION_DEPTH = 256;
+
   JsonRecordWriter() {
   }
 
@@ -38,12 +40,17 @@ public final class JsonRecordWriter {
   }
 
   static JsonNode toNode(Object val, Set<Object> visited) {
+    return toNode(val, visited, 1);
+  }
+
+  static JsonNode toNode(Object val, Set<Object> visited, int depth) {
+    requireDepth(depth);
     if (val == null) {
       return new JsonNode.JsonNullNode();
     }
 
     if (val instanceof Optional<?> opt) {
-      return opt.isPresent() ? toNode(opt.get(), visited) : new JsonNode.JsonNullNode();
+      return opt.isPresent() ? toNode(opt.get(), visited, depth + 1) : new JsonNode.JsonNullNode();
     }
 
     if (val instanceof Collection<?> || val.getClass().isArray()) {
@@ -54,11 +61,11 @@ public final class JsonRecordWriter {
         List<JsonNode> elements = new ArrayList<>();
         if (val instanceof Collection<?> values) {
           for (Object item : values) {
-            elements.add(toNode(item, visited));
+            elements.add(toNode(item, visited, depth + 1));
           }
         } else {
           for (int i = 0; i < Array.getLength(val); i++) {
-            elements.add(toNode(Array.get(val, i), visited));
+            elements.add(toNode(Array.get(val, i), visited, depth + 1));
           }
         }
         return new JsonNode.JsonArrayNode(elements);
@@ -77,7 +84,7 @@ public final class JsonRecordWriter {
           if (!(entry.getKey() instanceof String key)) {
             throw new JsonMappingException("JSON object map keys must be strings");
           }
-          members.put(key, toNode(entry.getValue(), visited));
+          members.put(key, toNode(entry.getValue(), visited, depth + 1));
         }
         return new JsonNode.JsonObjectNode(members);
       } finally {
@@ -111,16 +118,21 @@ public final class JsonRecordWriter {
     }
 
     if (val instanceof Record record) {
-      return recordToNode(record, visited);
+      return recordToNode(record, visited, depth);
     }
 
     if (!val.getClass().getPackageName().startsWith("java.")) {
-      return pojoToNode(val, visited);
+      return pojoToNode(val, visited, depth);
     }
     return new JsonNode.JsonStringNode(val.toString());
   }
 
   static JsonNode recordToNode(Record record, Set<Object> visited) {
+    return recordToNode(record, visited, 1);
+  }
+
+  static JsonNode recordToNode(Record record, Set<Object> visited, int depth) {
+    requireDepth(depth);
     if (!visited.add(record)) {
       throw new JsonMappingException("Cycle detected in object graph for record instance of " + record.getClass().getName());
     }
@@ -137,7 +149,7 @@ public final class JsonRecordWriter {
               e
           );
         }
-        members.put(component.decodedName(), toNode(value, visited));
+        members.put(component.decodedName(), toNode(value, visited, depth + 1));
       }
       return new JsonNode.JsonObjectNode(members);
     } finally {
@@ -146,6 +158,11 @@ public final class JsonRecordWriter {
   }
 
   static JsonNode pojoToNode(Object object, Set<Object> visited) {
+    return pojoToNode(object, visited, 1);
+  }
+
+  static JsonNode pojoToNode(Object object, Set<Object> visited, int depth) {
+    requireDepth(depth);
     if (!visited.add(object)) {
       throw new JsonMappingException("Cycle detected in object graph for " + object.getClass().getName());
     }
@@ -153,7 +170,7 @@ public final class JsonRecordWriter {
       Map<String, JsonNode> members = new LinkedHashMap<>();
       try {
         for (PojoPropertyReader.Property property : PojoPropertyReader.read(object)) {
-          members.put(DataNameCodec.decode(property.name()), toNode(property.value(), visited));
+          members.put(DataNameCodec.decode(property.name()), toNode(property.value(), visited, depth + 1));
         }
       } catch (IllegalAccessException | InvocationTargetException | IllegalArgumentException e) {
         throw new JsonMappingException("Failed to access POJO properties on " + object.getClass().getName(), e);
@@ -161,6 +178,12 @@ public final class JsonRecordWriter {
       return new JsonNode.JsonObjectNode(members);
     } finally {
       visited.remove(object);
+    }
+  }
+
+  static void requireDepth(int depth) {
+    if (depth > MAX_SERIALIZATION_DEPTH) {
+      throw new JsonMappingException("Maximum JSON serialization depth of " + MAX_SERIALIZATION_DEPTH + " exceeded");
     }
   }
 

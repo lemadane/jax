@@ -222,13 +222,22 @@ public final class JsonParser {
     if (pos + 4 > length) {
       throw new JsonMappingException("Invalid Unicode escape sequence at " + path);
     }
-    String hex = json.substring(pos, pos + 4);
-    pos += 4;
-    try {
-      return Integer.parseInt(hex, 16);
-    } catch (NumberFormatException e) {
-      throw new JsonMappingException("Invalid hex in Unicode escape \\u" + hex + " at " + path, e);
+    int value = 0;
+    for (int i = 0; i < 4; i++) {
+      char digit = json.charAt(pos++);
+      int hex;
+      if (digit >= '0' && digit <= '9') {
+        hex = digit - '0';
+      } else if (digit >= 'a' && digit <= 'f') {
+        hex = digit - 'a' + 10;
+      } else if (digit >= 'A' && digit <= 'F') {
+        hex = digit - 'A' + 10;
+      } else {
+        throw new JsonMappingException("Invalid hex in Unicode escape at " + path);
+      }
+      value = (value << 4) | hex;
     }
+    return value;
   }
 
   JsonNode.JsonBooleanNode parseBoolean(String path) {
