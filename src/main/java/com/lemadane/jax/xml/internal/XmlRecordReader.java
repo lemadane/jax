@@ -70,57 +70,60 @@ public final class XmlRecordReader {
 
     try {
       XMLStreamReader reader = factory.createXMLStreamReader(new java.io.StringReader(xml));
-      ArrayDeque<XmlElement> stack = new ArrayDeque<>();
-      XmlElement root = null;
-      while (reader.hasNext()) {
-        int event = reader.next();
-        if (event == XMLStreamConstants.DTD) {
-          throw new XMLStreamException("DOCTYPE declarations are disallowed");
-        }
-        if (event == XMLStreamConstants.START_ELEMENT) {
-          if (stack.size() >= MAX_NESTING_DEPTH) {
-            throw new XMLStreamException("Maximum XML nesting depth of " + MAX_NESTING_DEPTH + " exceeded");
+      try {
+        ArrayDeque<XmlElement> stack = new ArrayDeque<>();
+        XmlElement root = null;
+        while (reader.hasNext()) {
+          int event = reader.next();
+          if (event == XMLStreamConstants.DTD) {
+            throw new XMLStreamException("DOCTYPE declarations are disallowed");
           }
-          XmlElement element = new XmlElement(qualifiedName(reader.getPrefix(), reader.getLocalName()));
-          for (int i = 0; i < reader.getAttributeCount(); i++) {
-            element.addAttribute(
-                qualifiedName(reader.getAttributePrefix(i), reader.getAttributeLocalName(i)),
-                reader.getAttributeValue(i)
-            );
-          }
-          for (int i = 0; i < reader.getNamespaceCount(); i++) {
-            String prefix = reader.getNamespacePrefix(i);
-            element.addAttribute(prefix == null || prefix.isEmpty() ? "xmlns" : "xmlns:" + prefix,
-                reader.getNamespaceURI(i));
-          }
-          if (stack.isEmpty()) {
-            if (root != null) {
-              throw new XMLStreamException("Multiple document elements");
+          if (event == XMLStreamConstants.START_ELEMENT) {
+            if (stack.size() >= MAX_NESTING_DEPTH) {
+              throw new XMLStreamException("Maximum XML nesting depth of " + MAX_NESTING_DEPTH + " exceeded");
             }
-            root = element;
-          } else {
-            stack.peek().addChild(element);
-          }
-          stack.push(element);
-        } else if (event == XMLStreamConstants.END_ELEMENT) {
-          if (stack.isEmpty()) {
-            throw new XMLStreamException("Unexpected end element");
-          }
-          stack.pop();
-        } else if (event == XMLStreamConstants.CHARACTERS
-            || event == XMLStreamConstants.CDATA
-            || event == XMLStreamConstants.SPACE
-            || event == XMLStreamConstants.ENTITY_REFERENCE) {
-          if (!stack.isEmpty()) {
-            stack.peek().addText(reader.getText());
+            XmlElement element = new XmlElement(qualifiedName(reader.getPrefix(), reader.getLocalName()));
+            for (int i = 0; i < reader.getAttributeCount(); i++) {
+              element.addAttribute(
+                  qualifiedName(reader.getAttributePrefix(i), reader.getAttributeLocalName(i)),
+                  reader.getAttributeValue(i)
+              );
+            }
+            for (int i = 0; i < reader.getNamespaceCount(); i++) {
+              String prefix = reader.getNamespacePrefix(i);
+              element.addAttribute(prefix == null || prefix.isEmpty() ? "xmlns" : "xmlns:" + prefix,
+                  reader.getNamespaceURI(i));
+            }
+            if (stack.isEmpty()) {
+              if (root != null) {
+                throw new XMLStreamException("Multiple document elements");
+              }
+              root = element;
+            } else {
+              stack.peek().addChild(element);
+            }
+            stack.push(element);
+          } else if (event == XMLStreamConstants.END_ELEMENT) {
+            if (stack.isEmpty()) {
+              throw new XMLStreamException("Unexpected end element");
+            }
+            stack.pop();
+          } else if (event == XMLStreamConstants.CHARACTERS
+              || event == XMLStreamConstants.CDATA
+              || event == XMLStreamConstants.SPACE
+              || event == XMLStreamConstants.ENTITY_REFERENCE) {
+            if (!stack.isEmpty()) {
+              stack.peek().addText(reader.getText());
+            }
           }
         }
+        if (root == null || !stack.isEmpty()) {
+          throw new XMLStreamException("XML document has no complete root element");
+        }
+        return root;
+      } finally {
+        reader.close();
       }
-      reader.close();
-      if (root == null || !stack.isEmpty()) {
-        throw new XMLStreamException("XML document has no complete root element");
-      }
-      return root;
     } catch (XMLStreamException | IllegalArgumentException e) {
       throw new XmlMappingException("Failed to parse XML document: " + e.getMessage(), e);
     }

@@ -6,6 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.LinkOption;
+import java.util.Map;
 import java.util.Locale;
 
 import com.lemadane.jax.exceptions.DataMappingException;
@@ -48,10 +51,19 @@ public final class JaxCli {
       }
       String className = className(fileName.substring(0, fileName.lastIndexOf('.')));
       String content = Files.readString(input, StandardCharsets.UTF_8);
-      String source = JavaSourceGenerator.generate(className, content, extension.equals("xml"), style);
-      Path output = input.resolveSibling(className + ".java");
-      Files.writeString(output, source, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
-      out.println("Created " + output);
+      Map<String, String> sources = JavaSourceGenerator.generate(extension.equals("xml") ? null : className, content, extension.equals("xml"), style);
+      // Check every destination before creating any file, including referenced types.
+      for (String file : sources.keySet()) {
+        Path output = input.resolveSibling(file);
+        if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
+          throw new FileAlreadyExistsException(output.toString());
+        }
+      }
+      for (Map.Entry<String, String> source : sources.entrySet()) {
+        Path output = input.resolveSibling(source.getKey());
+        Files.writeString(output, source.getValue(), StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
+        out.println("Created " + output);
+      }
       return 0;
     } catch (IOException | DataMappingException | IllegalArgumentException e) {
       err.println("jax: " + e.getMessage());

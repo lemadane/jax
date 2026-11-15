@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import com.lemadane.jax.XmlAttribute;
+import com.lemadane.jax.XmlText;
 import com.lemadane.jax.JsonProperty;
 import com.lemadane.jax.convert.TypeConverter;
 import com.lemadane.jax.exceptions.ExcessDataException;
@@ -65,6 +66,12 @@ public final class XmlObjectReader {
     ConstructorResult<T> result = createFromConstructor(targetType, element, childElements, path, strict);
     T instance = result.instance();
     List<Field> fields = publicInstanceFields(targetType);
+
+    Field textField = XmlTextSupport.field(targetType);
+    if (textField != null && !result.consumedProperties().contains("#text")) {
+      Object value = readTextValue(textField.getType(), textField.getGenericType(), element, path);
+      setField(textField, instance, value, targetType, path + "/text()");
+    }
 
     for (Field field : attributeFields(targetType)) {
       String attributeName = xmlAttributeName(field);
@@ -188,6 +195,13 @@ public final class XmlObjectReader {
       Set<String> consumedProperties = new LinkedHashSet<>();
       boolean matches = true;
       for (var parameter : constructor.getParameters()) {
+        if (parameter.isAnnotationPresent(XmlText.class)) {
+          XmlTextSupport.validate(parameter, parameter.getType());
+          if (!consumedProperties.add("#text")) {
+            throw new XmlMappingException("Only one @XmlText constructor parameter is allowed at " + path);
+          }
+          continue;
+        }
         boolean attribute = parameter.isAnnotationPresent(XmlAttribute.class);
         XmlAttribute attributeAnnotation = parameter.getAnnotation(XmlAttribute.class);
         if (!parameter.isNamePresent() && (!attribute || attributeAnnotation.value().isEmpty())) {
@@ -229,6 +243,10 @@ public final class XmlObjectReader {
         var parameters = constructor.getParameters();
         Object[] arguments = new Object[parameters.length];
         for (int i = 0; i < parameters.length; i++) {
+          if (parameters[i].isAnnotationPresent(XmlText.class)) {
+            arguments[i] = readTextValue(parameters[i].getType(), parameters[i].getParameterizedType(), element, path);
+            continue;
+          }
           boolean attribute = parameters[i].isAnnotationPresent(XmlAttribute.class);
           String propertyName = attribute ? xmlAttributeName(parameters[i]) : DataNameCodec.decode(parameters[i].getName());
           if (attribute) {
@@ -306,7 +324,7 @@ public final class XmlObjectReader {
     List<Field> fields = new ArrayList<>();
     for (Field field : type.getFields()) {
       if (!Modifier.isStatic(field.getModifiers()) && !field.isSynthetic()
-          && !field.isAnnotationPresent(XmlAttribute.class)) {
+          && !field.isAnnotationPresent(XmlAttribute.class) && !field.isAnnotationPresent(XmlText.class)) {
         fields.add(field);
       }
     }
@@ -339,6 +357,14 @@ public final class XmlObjectReader {
       throw new XmlMappingException("@XmlAttribute is only supported on fields and constructor parameters");
     }
     return annotation.value();
+  }
+
+  static Object readTextValue(Class<?> targetType, Type genericType, XmlElement element, String path) {
+    if (!element.children().isEmpty()) {
+      throw new XmlMappingException("@XmlText cannot be combined with child elements at " + path);
+    }
+    XmlTextSupport.validateType(Optional.class.isAssignableFrom(targetType) ? typeArgument(genericType) : targetType);
+    return readValue(targetType, genericType, element, path + "/text()", true);
   }
 
   static Object readAttributeValue(Class<?> targetType, Type genericType, String value, String path) {

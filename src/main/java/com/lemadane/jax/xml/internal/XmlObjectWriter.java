@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import com.lemadane.jax.XmlAttribute;
+import com.lemadane.jax.XmlText;
 import com.lemadane.jax.exceptions.XmlMappingException;
 import com.lemadane.jax.naming.DataNameCodec;
 import com.lemadane.jax.reflect.RecordIntrospector;
@@ -67,6 +68,7 @@ public final class XmlObjectWriter {
       } else {
         appendPojoAttributes(object, element);
         appendPojoProperties(object, element, visited, depth);
+        XmlTextSupport.append(object, element);
       }
       return element;
     } finally {
@@ -145,7 +147,8 @@ public final class XmlObjectWriter {
   static boolean isXmlAttribute(Class<?> type, String fieldName) {
     for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
       try {
-        return current.getDeclaredField(fieldName).isAnnotationPresent(XmlAttribute.class);
+        Field field = current.getDeclaredField(fieldName);
+        return field.isAnnotationPresent(XmlAttribute.class) || field.isAnnotationPresent(XmlText.class);
       } catch (NoSuchFieldException e) {
         continue;
       }

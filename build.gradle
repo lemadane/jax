@@ -53,6 +53,8 @@ jmh {
 
 tasks.named('test', Test) {
     dependsOn tasks.named('jar')
+    inputs.dir(layout.projectDirectory.dir('examples')).withPropertyName('generatedExamples')
+    systemProperty 'jax.examples.path', layout.projectDirectory.dir('examples').asFile.absolutePath
     systemProperty 'jax.jar.path', tasks.named('jar', Jar).get().archiveFile.get().asFile.absolutePath
     useJUnitPlatform()
     finalizedBy tasks.named('jacocoTestReport')

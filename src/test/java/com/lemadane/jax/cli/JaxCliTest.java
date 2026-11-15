@@ -12,6 +12,8 @@ import java.util.List;
 import javax.tools.ToolProvider;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -62,6 +64,8 @@ class JaxCliTest {
         null,
         null,
         null,
+        "-sourcepath",
+        tempDir.toString(),
         "-classpath",
         System.getProperty("java.class.path"),
         "-d",
@@ -101,6 +105,8 @@ class JaxCliTest {
         null,
         null,
         null,
+        "-sourcepath",
+        tempDir.toString(),
         "-classpath",
         System.getProperty("java.class.path"),
         "-d",
@@ -122,6 +128,27 @@ class JaxCliTest {
       assertThat(Jax.toJson(person)).contains("\"name\":\"Ada\"").contains("\"age\":37");
       assertThat(Jax.toXml(person)).contains("id=\"P1\"").contains("<name>Ada</name>")
           .contains("<tag>math</tag>").contains("<tag>computing</tag>");
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"Person.java", "Address.java"})
+  void rejectsExistingOutputBeforeWritingAnySource(String existingFile) throws Exception {
+    Path input = tempDir.resolve("person.json");
+    Files.writeString(input, "{\"address\":{\"city\":\"London\"}}");
+    Path existing = tempDir.resolve(existingFile);
+    Files.writeString(existing, "// Existing user source");
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    ByteArrayOutputStream error = new ByteArrayOutputStream();
+    try (PrintStream out = new PrintStream(output, true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(error, true, StandardCharsets.UTF_8)) {
+      assertThat(JaxCli.run(new String[]{"--create", "record", input.toString()}, out, err)).isEqualTo(1);
+    }
+    assertThat(output.toString(StandardCharsets.UTF_8)).isEmpty();
+    assertThat(error.toString(StandardCharsets.UTF_8)).contains(existingFile);
+    assertThat(Files.readString(existing)).isEqualTo("// Existing user source");
+    try (var files = Files.list(tempDir)) {
+      assertThat(files.filter(path -> path.toString().endsWith(".java")).toList()).containsExactly(existing);
     }
   }
 
@@ -153,7 +180,9 @@ class JaxCliTest {
     assertThat(exitCode).isZero();
     assertThat(Files.readString(tempDir.resolve("Collection.java"), StandardCharsets.UTF_8))
         .contains("public record Collection(List<Items> items)")
-        .contains("public record Items(String name, int age)");
+        .doesNotContain("record Items");
+    assertThat(Files.readString(tempDir.resolve("Items.java"), StandardCharsets.UTF_8))
+        .contains("public record Items(String name, Integer age)");
     assertThat(error.toString(StandardCharsets.UTF_8)).isEmpty();
   }
 

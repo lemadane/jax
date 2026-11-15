@@ -1,6 +1,7 @@
 package com.lemadane.jax.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.lemadane.jax.XmlRoundTripSnapshot.xmlValues;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.InputStream;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import com.lemadane.jax.Jax;
 import com.lemadane.jax.Document;
@@ -51,9 +53,10 @@ class JaxCliE2E {
     Path source = generatedSource(result);
     assertThat(result.exitCode()).isZero();
     assertThat(result.output()).contains("Created ").contains("Person.java");
-    assertThat(Files.readString(source)).contains("public record Person").contains("record Address")
+    assertThat(Files.readString(source)).contains("public record Person")
         .contains("List<String> tags");
 
+    assertThat(Files.readString(tempDir.resolve("Address.java"))).contains("public ");
     Class<?> type = compileGenerated(source);
     Object person = Jax.toObject(json, type);
     assertThat(type.getMethod("name").invoke(person)).isEqualTo("Ada");
@@ -72,8 +75,9 @@ class JaxCliE2E {
     assertThat(result.exitCode()).isZero();
     String generated = Files.readString(source);
     assertThat(generated).contains("public class Person").contains("public String name()")
-        .contains("public void name(String value)").contains("public static class Address");
+        .contains("public void name(String value)");
 
+    assertThat(Files.readString(tempDir.resolve("Address.java"))).contains("public ");
     Class<?> type = compileGenerated(source);
     Object person = Jax.toObject(xml, type);
     assertThat(type.getMethod("name").invoke(person)).isEqualTo("Ada");
@@ -113,8 +117,7 @@ class JaxCliE2E {
     Path source = generatedSource(result);
     assertThat(result.exitCode()).isZero();
     String generated = Files.readString(source);
-    assertThat(generated).contains("public class Person").contains("public void age(int value)")
-        .contains("public static class Address");
+    assertThat(generated).contains("public class Person").contains("public void age(int value)");
 
     Class<?> type = compileGenerated(source);
     Object person = Jax.toObject(json, type);
@@ -154,7 +157,7 @@ class JaxCliE2E {
     CliResult result = runCli("record", "xml", xml);
     Path source = generatedSource(result);
     assertThat(result.exitCode()).isZero();
-    assertThat(Files.readString(source)).contains("public record Person").contains("record Address")
+    assertThat(Files.readString(source)).contains("public record Person")
         .contains("List<String> tag");
 
     Class<?> type = compileGenerated(source);
@@ -209,6 +212,107 @@ class JaxCliE2E {
     assertThat(Jax.toDocument(Jax.toJson(reread))).isEqualTo(Jax.toDocument(serialized));
   }
 
+  @DisplayName("Separate files resolve repeated type names without changing mapped data")
+  @ParameterizedTest(name = "{0} from {1}")
+  @CsvSource({"record,json", "pojo,json", "with-constructor,json",
+      "record,xml", "pojo,xml", "with-constructor,xml"})
+  void createsSeparateFilesForCollidingTypeNames(String style, String extension) throws Exception {
+    String json = """
+        {
+          "person": {"name": "Ada"},
+          "billing": {"address": {"city": "London"}},
+          "shipping": {"address": {"postalCode": "ABC"}},
+          "list": {"value": "reserved"},
+          "string": {"value": true},
+          "address": {"line": "Main Street"}
+        }
+        """;
+    String xml = """
+        <Person>
+          <person><name>Ada</name></person>
+          <billing><address><city>London</city></address></billing>
+          <shipping><address><postalCode>ABC</postalCode></address></shipping>
+          <list><value>reserved</value></list>
+          <string><value>true</value></string>
+          <address><line>Main Street</line></address>
+        </Person>
+        """;
+    String input = extension.equals("json") ? json : xml;
+    CliResult result = runCli(style, extension, input);
+    Class<?> type = compileGenerated(generatedSource(result));
+    try (var files = Files.list(tempDir)) {
+      assertThat(files.filter(path -> path.toString().endsWith(".java"))
+          .map(path -> path.getFileName().toString()).toList()).containsExactlyInAnyOrder(
+              "Person.java", "Person2.java", "Billing.java", "Address.java", "Shipping.java",
+              "Address2.java", "List2.java", "String2.java", "Address3.java");
+    }
+    Object model = Jax.toObject(input, type);
+    assertThat(Jax.toDocument(Jax.toJson(model))).isEqualTo(Jax.toDocument(json));
+    String output = extension.equals("json") ? Jax.toJson(model) : Jax.toXml(model);
+    Object reread = Jax.toObject(output, type);
+    assertThat(Jax.toDocument(Jax.toJson(reread))).isEqualTo(Jax.toDocument(json));
+  }
+
+  @DisplayName("Separate XML classes preserve attributes at multiple levels")
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"pojo", "with-constructor"})
+  void roundTripsSeparateXmlClassesWithAttributes(String style) throws Exception {
+    String xml = """
+        <Person id="P1">
+          <address code="HOME"><city>London</city></address>
+          <item sku="A"><name>Pen</name></item>
+          <item sku="B"><name>Book</name></item>
+        </Person>
+        """;
+    CliResult result = runCli(style, "xml", xml);
+    Class<?> type = compileGenerated(generatedSource(result));
+    assertThat(Files.readString(tempDir.resolve("Address.java"))).contains("@XmlAttribute(\"code\")");
+    assertThat(Files.readString(tempDir.resolve("Item.java"))).contains("@XmlAttribute(\"sku\")");
+    Object model = Jax.toObject(xml, type);
+    String output = Jax.toXml(model);
+    assertThat(output).contains("id=\"P1\"", "code=\"HOME\"", "sku=\"A\"", "sku=\"B\"");
+    assertThat(Jax.toDocument(Jax.toJson(Jax.toObject(output, type))))
+        .isEqualTo(Jax.toDocument(Jax.toJson(model)));
+  }
+
+  @DisplayName("The supplied incomplete supply-chain XML produces no Java files")
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"record", "pojo", "with-constructor"})
+  void rejectsIncompleteSupplyChainManifestWithoutCreatingFiles(String style) throws Exception {
+    String xml;
+    try (InputStream fixture = getClass().getResourceAsStream("incomplete-supply-chain-manifest.xml")) {
+      assertThat(fixture).isNotNull();
+      xml = new String(fixture.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    assertThat(xml.stripTrailing()).endsWith("<wms:LineItems>");
+    CliResult result = runCli(style, "xml", xml);
+    assertThat(result.exitCode()).isEqualTo(1);
+    assertThat(result.output()).contains("Failed to parse XML sample").doesNotContain("Created ");
+    try (var files = Files.list(tempDir)) {
+      assertThat(files.filter(path -> path.toString().endsWith(".java")).toList()).isEmpty();
+    }
+  }
+
+  @DisplayName("The complete supply-chain XML generates separate classes and preserves all XML values")
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"pojo", "with-constructor"})
+  void roundTripsCompleteSupplyChainManifest(String style) throws Exception {
+    String xml;
+    // Repairs pasted markup only; all supplied values and namespace URIs are retained.
+    try (InputStream fixture = getClass().getResourceAsStream("supply-chain-manifest.xml")) {
+      assertThat(fixture).isNotNull();
+      xml = new String(fixture.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    CliResult result = runCli(style, "xml", xml);
+    assertThat(result.exitCode()).as(result.output()).isZero();
+    Class<?> type = compileGenerated(tempDir.resolve("log$colon$GlobalSupplyChainManifest.java"));
+    Object manifest = Jax.toObject(xml, type);
+    String output = Jax.toXml(manifest);
+    assertThat(xmlValues(output)).containsExactlyInAnyOrderEntriesOf(xmlValues(xml));
+    Object reread = Jax.toObject(output, type);
+    assertThat(xmlValues(Jax.toXml(reread))).isEqualTo(xmlValues(output));
+  }
+
   CliResult runCli(String style, String extension, String content) throws Exception {
     Path input = tempDir.resolve("person." + extension);
     Files.writeString(input, content, StandardCharsets.UTF_8);
@@ -236,21 +340,24 @@ class JaxCliE2E {
 
   Class<?> compileGenerated(Path source) throws Exception {
     Path classes = Files.createDirectory(tempDir.resolve("generated-classes-" + System.nanoTime()));
-    int compilerResult = ToolProvider.getSystemJavaCompiler().run(
-        null,
-        null,
-        null,
-        "-parameters",
-        "-classpath",
-        System.getProperty("java.class.path"),
-        "-d",
-        classes.toString(),
-        source.toString()
-    );
+    List<Path> sources;
+    try (var files = Files.list(source.getParent())) {
+      sources = files.filter(path -> path.toString().endsWith(".java")).sorted().toList();
+    }
+    List<String> arguments = new ArrayList<>(List.of(
+        "-parameters", "-classpath", System.getProperty("java.class.path"), "-d", classes.toString()));
+    sources.forEach(path -> arguments.add(path.toString()));
+    int compilerResult = ToolProvider.getSystemJavaCompiler().run(null, null, null, arguments.toArray(String[]::new));
     assertThat(compilerResult).isZero();
     URLClassLoader classLoader = new URLClassLoader(new URL[]{classes.toUri().toURL()});
     classLoaders.add(classLoader);
-    return classLoader.loadClass("Person");
+    for (Path file : sources) {
+      String name = file.getFileName().toString().replace(".java", "");
+      Class<?> generated = classLoader.loadClass(name);
+      assertThat(generated.getEnclosingClass()).as("%s is a top-level type", name).isNull();
+      assertThat(generated.getDeclaredClasses()).as("%s contains no nested types", name).isEmpty();
+    }
+    return classLoader.loadClass(source.getFileName().toString().replace(".java", ""));
   }
 
   record CliResult(int exitCode, String output) {}

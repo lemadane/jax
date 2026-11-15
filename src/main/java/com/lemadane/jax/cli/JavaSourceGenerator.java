@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,25 +50,59 @@ final class JavaSourceGenerator {
   JavaSourceGenerator() {
   }
 
-  static String generate(String className, String input, boolean xml, Style style) {
+  // Generated types must not shadow scalar types or annotations used in the source files.
+  static final Set<String> RESERVED_TYPE_NAMES = Set.of(
+      "string", "object", "list", "boolean", "byte", "short", "integer", "long",
+      "float", "double", "character", "jsonproperty", "xmlattribute", "xmltext"
+  );
+
+  static Map<String, String> generate(String className, String input, boolean xml, Style style) {
     Schema root = xml ? parseXml(input, className) : parseJson(input, className);
     if (xml && style == Style.RECORD && containsAttributes(root)) {
       throw new DataMappingException(
           "Record generation from XML with attributes is unsupported; use pojo or with-constructor."
       );
     }
-    StringBuilder source = new StringBuilder();
-    if (style != Style.RECORD) {
-      source.append("import com.lemadane.jax.JsonProperty;\n\n");
+    if (RESERVED_TYPE_NAMES.contains(root.name.toLowerCase(Locale.ROOT))) {
+      throw new DataMappingException("Generated root type " + root.name
+          + " conflicts with a supporting Java type. "
+          + (xml ? "Rename the XML root element." : "Rename the input file."));
     }
-    if (xml && containsAttributes(root)) {
-      source.append("import com.lemadane.jax.XmlAttribute;\n\n");
+    List<Schema> types = new ArrayList<>();
+    collectTypes(root, new HashSet<>(RESERVED_TYPE_NAMES), types);
+    Map<String, String> sources = new LinkedHashMap<>();
+    for (Schema type : types) {
+      StringBuilder source = new StringBuilder();
+      if (style != Style.RECORD) {
+        source.append("import com.lemadane.jax.JsonProperty;\n\n");
+      }
+      if (xml && containsAttributes(type)) {
+        source.append("import com.lemadane.jax.XmlAttribute;\n\n");
+      }
+      if (type.fields.values().stream().anyMatch(field -> field.text)) {
+        source.append("import com.lemadane.jax.XmlText;\n\n");
+      }
+      if (containsLists(type)) {
+        source.append("import java.util.List;\n\n");
+      }
+      renderType(source, type, style);
+      sources.put(type.name + ".java", source.toString());
     }
-    if (containsLists(root)) {
-      source.append("import java.util.List;\n\n");
+    return sources;
+  }
+
+  static void collectTypes(Schema schema, Set<String> usedNames, List<Schema> types) {
+    String baseName = schema.name;
+    int suffix = 2;
+    while (!usedNames.add(schema.name.toLowerCase(Locale.ROOT))) {
+      schema.name = baseName + suffix++;
     }
-    renderType(source, root, true, style, 0);
-    return source.toString();
+    types.add(schema);
+    for (FieldSchema field : schema.fields.values()) {
+      if (field.type.object != null) {
+        collectTypes(field.type.object, usedNames, types);
+      }
+    }
   }
 
   static Schema parseJson(String input, String className) {
@@ -143,15 +178,42 @@ final class JavaSourceGenerator {
   }
 
   static void mergeObject(Schema target, Schema source) {
+    for (FieldSchema field : target.fields.values()) {
+      if (!source.fields.containsKey(field.name)) {
+        field.nullable = true;
+      }
+    }
     for (Map.Entry<String, FieldSchema> entry : source.fields.entrySet()) {
       FieldSchema existing = target.fields.get(entry.getKey());
       if (existing == null) {
+        entry.getValue().nullable = true;
         addField(target, entry.getKey(), entry.getValue());
       } else if (!existing.externalName.equals(entry.getValue().externalName)
           || existing.attribute != entry.getValue().attribute) {
         throw nameCollision(existing.externalName, entry.getValue().externalName, entry.getKey());
+      } else {
+        existing.type = mergeTypes(existing.type, entry.getValue().type);
+        existing.list |= entry.getValue().list;
+        existing.nullable |= entry.getValue().nullable;
       }
     }
+  }
+
+  static TypeSchema mergeTypes(TypeSchema first, TypeSchema second) {
+    if (first.object != null && second.object != null) {
+      mergeObject(first.object, second.object);
+      return first;
+    }
+    if (first.object != null || second.object != null) {
+      throw new DataMappingException("Cannot combine scalar and object samples for the same XML property.");
+    }
+    if (first.scalar.equals(second.scalar)) {
+      return first;
+    }
+    List<String> numbers = List.of("int", "long", "java.math.BigInteger", "java.math.BigDecimal");
+    int left = numbers.indexOf(first.scalar);
+    int right = numbers.indexOf(second.scalar);
+    return TypeSchema.scalar(left >= 0 && right >= 0 ? numbers.get(Math.max(left, right)) : "String");
   }
 
   static void addField(Schema schema, String javaName, FieldSchema field) {
@@ -191,6 +253,11 @@ final class JavaSourceGenerator {
           }
           if (event == XMLStreamConstants.START_ELEMENT) {
             XmlNode node = new XmlNode(qualifiedName(reader.getPrefix(), reader.getLocalName()));
+            for (int i = 0; i < reader.getNamespaceCount(); i++) {
+              String prefix = reader.getNamespacePrefix(i);
+              node.attributes.put(prefix == null || prefix.isEmpty() ? "xmlns" : "xmlns:" + prefix,
+                  reader.getNamespaceURI(i) == null ? "" : reader.getNamespaceURI(i));
+            }
             for (int i = 0; i < reader.getAttributeCount(); i++) {
               node.attributes.put(qualifiedName(reader.getAttributePrefix(i), reader.getAttributeLocalName(i)),
                   reader.getAttributeValue(i));
@@ -219,10 +286,10 @@ final class JavaSourceGenerator {
         if (root == null || !stack.isEmpty()) {
           throw new XMLStreamException("XML document has no complete root element");
         }
-        if (root.children.isEmpty() && !root.text.toString().isBlank()) {
+        if (root.children.isEmpty() && root.attributes.isEmpty() && !root.text.toString().isBlank()) {
           throw new DataMappingException("A text-only XML root cannot be mapped to a generated class.");
         }
-        return xmlObject(className, root);
+        return xmlObject(className == null ? javaName(root.name) : className, root);
       } finally {
         reader.close();
       }
@@ -232,18 +299,22 @@ final class JavaSourceGenerator {
   }
 
   static Schema xmlObject(String name, XmlNode node) {
-    if (!node.text.toString().isBlank() && (!node.children.isEmpty() || !node.attributes.isEmpty())) {
+    if (!node.text.toString().isBlank() && !node.children.isEmpty()) {
       throw new DataMappingException("Mixed XML content cannot be represented by generated properties.");
     }
     Schema schema = new Schema(name);
     for (Map.Entry<String, String> entry : node.attributes.entrySet()) {
-      if (entry.getKey().equals("xmlns") || entry.getKey().startsWith("xmlns:")) {
-        continue;
-      }
       FieldSchema field = new FieldSchema(entry.getKey(), javaName(entry.getKey()));
       field.attribute = true;
       field.type = scalarFromText(entry.getValue());
       addField(schema, field.name, field);
+    }
+    if (node.children.isEmpty() && !node.text.isEmpty()) {
+      FieldSchema text = new FieldSchema("#text", "$text");
+      text.text = true;
+      // String preserves empty text, whitespace, leading zeros and decimal spelling.
+      text.type = TypeSchema.scalar("String");
+      addField(schema, text.name, text);
     }
     Map<String, List<XmlNode>> grouped = new LinkedHashMap<>();
     Map<String, String> externalNamesByJavaName = new LinkedHashMap<>();
@@ -269,6 +340,13 @@ final class JavaSourceGenerator {
         field.type = TypeSchema.object(nested);
       } else {
         field.type = scalarFromText(first.text.toString());
+        for (int i = 1; i < occurrences.size(); i++) {
+          XmlNode next = occurrences.get(i);
+          if (!next.attributes.isEmpty() || !next.children.isEmpty()) {
+            throw new DataMappingException("Cannot combine scalar and object samples for the same XML property.");
+          }
+          field.type = mergeTypes(field.type, scalarFromText(next.text.toString()));
+        }
       }
       addField(schema, field.name, field);
     }
@@ -293,10 +371,8 @@ final class JavaSourceGenerator {
     return TypeSchema.scalar("String");
   }
 
-  static void renderType(StringBuilder source, Schema schema, boolean topLevel, Style style, int indent) {
-    String pad = "    ".repeat(indent);
+  static void renderType(StringBuilder source, Schema schema, Style style) {
     if (style == Style.RECORD) {
-      source.append(pad);
       source.append("public ");
       source.append("record ").append(schema.name).append('(');
       int index = 0;
@@ -307,53 +383,52 @@ final class JavaSourceGenerator {
         if (field.attribute) {
           source.append("@XmlAttribute(\"").append(javaString(field.externalName)).append("\") ");
         }
+        if (field.text) {
+          source.append("@XmlText ");
+        }
         source.append(field.typeName()).append(' ').append(field.name);
       }
       source.append(") {\n");
-      renderNestedTypes(source, schema, style, indent + 1);
-      source.append(pad).append("}\n");
+      source.append("}\n");
       return;
     }
 
-    source.append(pad);
-    if (topLevel) {
-      source.append("public ");
-    } else {
-      source.append("public static ");
-    }
+    source.append("public ");
     source.append("class ").append(schema.name).append(" {\n");
     for (FieldSchema field : schema.fields.values()) {
-      source.append(pad).append("    ");
+      source.append("    ");
       if (field.attribute) {
         source.append("@XmlAttribute(\"").append(javaString(field.externalName)).append("\") ");
+      }
+      if (field.text) {
+        source.append("@XmlText ");
       }
       source.append(field.typeName()).append(' ').append(field.name).append(";\n");
     }
     if (style == Style.WITH_CONSTRUCTOR) {
-      source.append('\n').append(pad).append("    public ").append(schema.name).append("() {\n")
-          .append(pad).append("    }\n");
-      source.append('\n').append(pad).append("    public ").append(schema.name).append('(');
+      source.append('\n').append("    public ").append(schema.name).append("() {\n")
+          .append("    }\n");
+      source.append('\n').append("    public ").append(schema.name).append('(');
       appendParameters(source, schema, false);
       source.append(") {\n");
       for (FieldSchema field : schema.fields.values()) {
-        source.append(pad).append("        this.").append(field.name).append(" = ").append(field.name)
+        source.append("        this.").append(field.name).append(" = ").append(field.name)
             .append(";\n");
       }
-      source.append(pad).append("    }\n");
+      source.append("    }\n");
     }
     for (FieldSchema field : schema.fields.values()) {
-      source.append('\n').append(pad).append("    public ").append(field.typeName()).append(' ')
+      source.append('\n').append("    public ").append(field.typeName()).append(' ')
           .append(field.name).append("() {\n")
-          .append(pad).append("        return ").append(field.name).append(";\n")
-          .append(pad).append("    }\n")
-          .append(pad).append("    @JsonProperty\n")
-          .append(pad).append("    public void ").append(field.name).append('(')
+          .append("        return ").append(field.name).append(";\n")
+          .append("    }\n")
+          .append("    @JsonProperty\n")
+          .append("    public void ").append(field.name).append('(')
           .append(field.typeName()).append(" value) {\n")
-          .append(pad).append("        this.").append(field.name).append(" = value;\n")
-          .append(pad).append("    }\n");
+          .append("        this.").append(field.name).append(" = value;\n")
+          .append("    }\n");
     }
-    renderNestedTypes(source, schema, style, indent + 1);
-    source.append(pad).append("}\n");
+    source.append("}\n");
   }
 
   static void appendParameters(StringBuilder source, Schema schema, boolean attributesOnly) {
@@ -368,16 +443,10 @@ final class JavaSourceGenerator {
       if (field.attribute) {
         source.append("@XmlAttribute(\"").append(javaString(field.externalName)).append("\") ");
       }
-      source.append(field.typeName()).append(' ').append(field.name);
-    }
-  }
-
-  static void renderNestedTypes(StringBuilder source, Schema schema, Style style, int indent) {
-    for (FieldSchema field : schema.fields.values()) {
-      if (field.type.object != null) {
-        source.append('\n');
-        renderType(source, field.type.object, false, style, indent);
+      if (field.text) {
+        source.append("@XmlText ");
       }
+      source.append(field.typeName()).append(' ').append(field.name);
     }
   }
 
@@ -427,7 +496,7 @@ final class JavaSourceGenerator {
   }
 
   static final class Schema {
-    final String name;
+    String name;
     final Map<String, FieldSchema> fields = new LinkedHashMap<>();
 
     Schema(String name) {
@@ -441,6 +510,8 @@ final class JavaSourceGenerator {
     TypeSchema type = TypeSchema.scalar("Object");
     boolean list;
     boolean attribute;
+    boolean text;
+    boolean nullable;
 
     FieldSchema(String externalName, String name) {
       this.externalName = externalName;
@@ -449,7 +520,7 @@ final class JavaSourceGenerator {
 
     String typeName() {
       String value = type.object == null ? type.scalar : type.object.name;
-      return list ? "List<" + boxed(value) + ">" : value;
+      return list ? "List<" + boxed(value) + ">" : nullable ? boxed(value) : value;
     }
   }
 

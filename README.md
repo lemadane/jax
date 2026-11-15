@@ -2,20 +2,27 @@
 
 Generate Java records and POJOs from JSON or XML samples, then use them to read and write your documents with one small API. JAX runs on **Java 17+** with **zero runtime dependencies**.
 
+**Tested with deeply nested JSON and XML:** JAX generates, compiles, and round-trips the [complex organization JSON](#complex-organization-json-round-trip) and [supply-chain XML manifest](#complete-supply-chain-xml-example). The JSON example works with all three model styles; the XML manifest uses POJOs or constructor-based classes to preserve attributes, element text, and namespace declarations.
+
 ## Features
 
-1. **Source generation** — generate records or POJOs from sample JSON and XML using the CLI.
+1. **One Java file per type** — generate separate records or POJOs from JSON and XML using the CLI. Each object type gets its own source file.
 2. **JSON and XML mapping** — read and write records and POJOs with automatic input-format detection.
 3. **Strict and partial mapping** — validate record structure or select only the fields your application needs.
 4. **Typed, nested data** — work with nested objects, lists, arrays, enums, optional values, and precise numeric types.
 5. **Input safeguards and clear errors** — bounded nesting and numeric conversion, XML external-entity protection, and mapping errors with field paths.
 6. **Schema-free JSON** — read JSON into an insertion-ordered `Document` without declaring a Java model.
-7. **XML attributes and special names** — map instance attributes and encode namespace prefixes or special characters in Java identifiers.
+7. **XML attributes, element text, and namespaces** — use POJOs with `@XmlAttribute` and `@XmlText` to preserve values such as `<Quantity unit="BOX">120</Quantity>`, and encode namespace prefixes or special characters in Java identifiers.
 
 ## Contents
 
 - [Generate Java classes from JSON or XML](#generate-java-classes-from-json-or-xml)
+- [Generated file layout](#generated-file-layout)
+- [Complex-document support](#complex-document-support)
 - [Complex JSON round trip](#complex-organization-json-round-trip)
+- [Complete supply-chain XML example](#complete-supply-chain-xml-example)
+- [What the API round-trip tests compare](#what-the-api-round-trip-tests-compare)
+- [Why XML attributes and text currently require classes](#why-xml-attributes-and-text-currently-require-classes)
 - [Troubleshooting](#troubleshooting)
 - [Installation](#installation)
 - [Quick start](#quick-start)
@@ -77,9 +84,44 @@ If you move the JAR, replace `build/libs/jax-0.2.0-SNAPSHOT.jar` with its new pa
 
 | Style | Generated model | When to use it |
 | --- | --- | --- |
-| `record` | Records with nested records | JSON or XML without attributes |
-| `pojo` | Mutable classes with getters and annotated setters | XML with attributes, or models you need to modify |
-| `with-constructor` | Mutable classes with no-argument and all-fields constructors | The same data as `pojo`, with constructor-based initialization |
+| `record` | One public record per Java file | JSON or XML without attributes |
+| `pojo` | One mutable class per Java file, with getters and annotated setters | XML with attributes, or models you need to modify |
+| `with-constructor` | One mutable class per Java file, with no-argument and all-fields constructors | The same data as `pojo`, with constructor-based initialization |
+
+### Complex-document support
+
+Complexity alone does not require hand-writing the Java model. JAX handles deeply nested objects, repeated elements, lists, and references between separate generated types. These examples are checked by [end-to-end tests](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) that generate source files, compile them, read the original data, serialize it, and read it again.
+
+| Tested document | `record` | `pojo` | `with-constructor` |
+| --- | --- | --- | --- |
+| [Complex organization JSON](#complex-organization-json-round-trip): departments, budgets, vendors, contracts, projects, and milestones | Supported; use partial mapping for missing milestone fields in this sample | Supported | Supported |
+| XML with nested child elements and repeated values, without attributes or namespace declarations | Supported | Supported | Supported |
+| [Supply-chain XML](#complete-supply-chain-xml-example): routing legs, pallets, telemetry, dangerous goods, customs, attributes, and element text | Not currently supported | Supported and round-trip tested | Supported and round-trip tested |
+
+**All styles produce individual Java files, with no nested classes or records.** Choose the style that supports your document's structure. Generated types are inferred from the supplied sample, so review them for optional fields and values that the sample does not contain. See [safeguards and errors](#safeguards-and-errors) for parsing and mapping limits.
+
+#### Generated file layout
+
+**Every style generates one public type per `.java` file.** A nested JSON or XML object becomes a separate record or class, referenced by its parent.
+
+For the customer sample below, the output is:
+
+```text
+customer.json
+Customer.java      ← name, age, and an Address property
+Address.java       ← city
+```
+
+The equivalent record declarations are easy to read independently:
+
+| File | Declaration |
+| --- | --- |
+| `Customer.java` | `public record Customer(String name, int age, Address address) {}` |
+| `Address.java` | `public record Address(String city) {}` |
+
+All files are created beside the input. Compile them together, or use `javac -sourcepath .` as shown in the walkthroughs. If two objects would produce the same type name, the generator uses distinct names such as `Address` and `Address2` and updates the references automatically.
+
+Existing files are protected: the CLI checks every output path before creating the source files. Use a fresh directory for each independent model or move the previous generated files before regenerating.
 
 ### 3. Follow the XML or JSON walkthrough
 
@@ -127,7 +169,9 @@ Exit JShell to return to your terminal:
 java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo order.xml
 ```
 
-This creates `Order.java` beside `order.xml`. The following excerpt shows the generated fields; the complete output also includes public getters and `@JsonProperty` setters:
+This creates **`Order.java` and `Item.java`** beside `order.xml`. The following excerpts show their fields; each complete file also includes public getters and `@JsonProperty` setters. Each public type is in its own file.
+
+**`Order.java`**
 
 ```java
 import com.lemadane.jax.XmlAttribute;
@@ -139,17 +183,24 @@ public class Order {
     String customer;
     List<Item> item;
 
-    public static class Item {
-        @XmlAttribute("sku") String sku;
-        String name;
-        int quantity;
-        // Generated getters and setters omitted here.
-    }
     // Generated getters and setters omitted here.
 }
 ```
 
-Root and nested attributes become `@XmlAttribute` instance fields. Repeated `<item>` elements become a `List<Item>`, and nested elements become nested Java classes. Use `pojo` or `with-constructor` for this input: `record` generation rejects XML attributes because record mapping does not populate per-instance attributes.
+**`Item.java`**
+
+```java
+import com.lemadane.jax.XmlAttribute;
+
+public class Item {
+    @XmlAttribute("sku") String sku;
+    String name;
+    int quantity;
+    // Generated getters and setters omitted here.
+}
+```
+
+Root and nested attributes become `@XmlAttribute` instance fields. Repeated `<item>` elements become a `List<Item>`, and nested objects become separate Java classes. Use `pojo` or `with-constructor` for this input: `record` generation rejects XML attributes because record mapping does not populate per-instance attributes.
 
 **Step 3 — Create the application.** Save this complete example as `XmlExample.java` in the repository root. Use the actual generated `Order.java`, not the shortened excerpt above:
 
@@ -171,14 +222,14 @@ public class XmlExample {
 **Step 4 — Compile and run.** On Linux or macOS:
 
 ```shell
-javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Order.java XmlExample.java
+javac -parameters -sourcepath . -cp build/libs/jax-0.2.0-SNAPSHOT.jar Order.java XmlExample.java
 java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" XmlExample
 ```
 
 On Windows (Command Prompt or PowerShell):
 
 ```shell
-javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Order.java XmlExample.java
+javac -parameters -sourcepath . -cp build/libs/jax-0.2.0-SNAPSHOT.jar Order.java XmlExample.java
 java -cp ".;build/libs/jax-0.2.0-SNAPSHOT.jar" XmlExample
 ```
 
@@ -229,12 +280,18 @@ Exit JShell to return to your terminal:
 java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create record customer.json
 ```
 
-This creates `Customer.java`:
+This creates two separate files beside `customer.json`:
+
+**`Customer.java`**
 
 ```java
-public record Customer(String name, int age, Address address) {
-    public record Address(String city) {}
-}
+public record Customer(String name, int age, Address address) {}
+```
+
+**`Address.java`**
+
+```java
+public record Address(String city) {}
 ```
 
 **Step 3 — Create the application.** Save this complete example as `JsonExample.java` in the repository root:
@@ -257,14 +314,14 @@ public class JsonExample {
 **Step 4 — Compile and run.** On Linux or macOS:
 
 ```shell
-javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Customer.java JsonExample.java
+javac -parameters -sourcepath . -cp build/libs/jax-0.2.0-SNAPSHOT.jar Customer.java JsonExample.java
 java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" JsonExample
 ```
 
 On Windows (Command Prompt or PowerShell):
 
 ```shell
-javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Customer.java JsonExample.java
+javac -parameters -sourcepath . -cp build/libs/jax-0.2.0-SNAPSHOT.jar Customer.java JsonExample.java
 java -cp ".;build/libs/jax-0.2.0-SNAPSHOT.jar" JsonExample
 ```
 
@@ -276,7 +333,7 @@ London
 
 The application also creates `customer-output.json` with the customer's mapped data.
 
-To generate a mutable Java class instead, choose one of these commands **instead of** the record command in Step 2. Run only one generation command per input file; the CLI refuses to overwrite `Customer.java`:
+To generate a mutable Java class instead, choose one of these commands **instead of** the record command in Step 2. Run only one generation command per input file; the CLI refuses to overwrite `Customer.java` or any referenced type file:
 
 ```shell
 java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo customer.json
@@ -287,6 +344,43 @@ java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create with-constructor customer.j
 ### Complex organization JSON round trip
 
 Generate a Java model from an organization response, read its nested data, and write it back to JSON.
+
+**Browse the generated code:** each style has 23 separate Java files, saved permanently in [`examples/complex-organization/`](examples/complex-organization/).
+
+| Model style | Generated Java source |
+| --- | --- |
+| Records (one file per type) | [record/](examples/complex-organization/record/) — start with [ComplexOrganization.java](examples/complex-organization/record/ComplexOrganization.java) |
+| Mutable POJOs (one file per type) | [pojo/](examples/complex-organization/pojo/) — start with [ComplexOrganization.java](examples/complex-organization/pojo/ComplexOrganization.java) |
+| POJOs with constructors (one file per type) | [with-constructor/](examples/complex-organization/with-constructor/) — start with [ComplexOrganization.java](examples/complex-organization/with-constructor/ComplexOrganization.java) |
+
+These models use the [complex organization fixture](src/test/resources/com/lemadane/jax/cli/complex-organization.json). Every style has **one public type per file**, including `Environment.java`, `Organization.java`, `Budget.java`, and `Milestones.java`. Copy all Java files from your chosen style's directory into the same application package. No generated type is nested inside another type.
+
+Choose one style and compile it separately; all three variants define `ComplexOrganization`. Add the same package declaration to the files you copy and include JAX on the classpath. The record model uses partial mapping for the original payload; the POJO styles support strict mapping.
+
+To compile the separate record files from the repository root after building the JAR:
+
+```shell
+javac -cp build/libs/jax-0.2.0-SNAPSHOT.jar -d build/example-records examples/complex-organization/record/*.java
+```
+
+These permanent examples use the same separate-file layout produced by the CLI.
+
+<details>
+<summary><strong>Browse all 23 record files by area</strong></summary>
+
+| Area | Record files |
+| --- | --- |
+| Response | [ComplexOrganization.java](examples/complex-organization/record/ComplexOrganization.java), [Pagination.java](examples/complex-organization/record/Pagination.java) |
+| Environment | [Environment.java](examples/complex-organization/record/Environment.java), [Cluster.java](examples/complex-organization/record/Cluster.java), [AutoScaling.java](examples/complex-organization/record/AutoScaling.java), [Thresholds.java](examples/complex-organization/record/Thresholds.java) |
+| Organization | [Organization.java](examples/complex-organization/record/Organization.java), [Departments.java](examples/complex-organization/record/Departments.java), [Budget.java](examples/complex-organization/record/Budget.java) |
+| Vendors and contracts | [CostCenters.java](examples/complex-organization/record/CostCenters.java), [Allocations.java](examples/complex-organization/record/Allocations.java), [Vendors.java](examples/complex-organization/record/Vendors.java), [Contracts.java](examples/complex-organization/record/Contracts.java), [Sla.java](examples/complex-organization/record/Sla.java), [EscalationContacts.java](examples/complex-organization/record/EscalationContacts.java), [Channels.java](examples/complex-organization/record/Channels.java) |
+| Projects and delivery | [Projects.java](examples/complex-organization/record/Projects.java), [Milestones.java](examples/complex-organization/record/Milestones.java), [Deliverables.java](examples/complex-organization/record/Deliverables.java), [Metrics.java](examples/complex-organization/record/Metrics.java), [LatencyMs.java](examples/complex-organization/record/LatencyMs.java), [Blockers.java](examples/complex-organization/record/Blockers.java), [AssignedTo.java](examples/complex-organization/record/AssignedTo.java) |
+
+The POJO and constructor-based directories contain the same file names. Choose one complete directory for your application.
+
+</details>
+
+The walkthrough below generates a separate model named `OrganizationPayload` from its input filename.
 
 | Sample data | What it demonstrates |
 | --- | --- |
@@ -458,7 +552,7 @@ Exit JShell before running the next commands:
 java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create record organization-payload.json
 ```
 
-The CLI creates **`OrganizationPayload.java`** beside the input file, with nested records and lists inferred from the sample.
+The CLI creates **`OrganizationPayload.java`** and separate files for every referenced object type beside the input file. Each file contains one public record; object fields and lists reference those records by name.
 
 The two milestones have different fields:
 
@@ -505,7 +599,7 @@ The program writes `organization-output.json`, then reads it again using strict 
 **Linux / macOS**
 
 ```shell
-javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar OrganizationPayload.java ComplexJsonExample.java
+javac -parameters -sourcepath . -cp build/libs/jax-0.2.0-SNAPSHOT.jar OrganizationPayload.java ComplexJsonExample.java
 java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" ComplexJsonExample
 ```
 
@@ -530,7 +624,7 @@ The final `true` confirms that reading and serializing the generated output prod
 
 | Output file | Contents |
 | --- | --- |
-| `OrganizationPayload.java` | Generated records for the response and its nested data |
+| `OrganizationPayload.java` and referenced `.java` files | One generated record per file for the response and each object type |
 | `organization-output.json` | Serialized response, including defaults for missing milestone lists |
 
 Numeric values are preserved, but their spelling or scale may change: `1450000.00` can serialize as `1450000`. Missing milestone lists are written as `[]`.
@@ -538,7 +632,7 @@ Numeric values are preserved, but their spelling or scale may change: `1450000.0
 <details>
 <summary><strong>Using a mutable class instead of a record</strong></summary>
 
-Choose `pojo` or `with-constructor` instead of `record` in the generation command. Move the existing generated source before trying another style; the CLI does not overwrite files.
+Choose `pojo` or `with-constructor` instead of `record` in the generation command. Move all existing generated Java files before trying another style; the CLI does not overwrite files.
 
 | Generation style | Initial mapping | Missing milestone lists |
 | --- | --- | --- |
@@ -552,12 +646,116 @@ The [end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) generat
 
 ### Generation conventions
 
-- The input filename determines the top-level Java name: `order.xml` produces `Order.java`. For strict XML mapping, choose a filename that produces a class name matching the root element.
-- Generated files are written beside the input with no package declaration. Move them into your application and add its package declaration as needed. Existing Java files are never overwritten.
+- For JSON, the input filename determines the top-level Java name: `order.json` produces `Order.java`. For XML, the CLI uses the actual root element name, preserving case and encoding special characters: `<Order>` produces `Order.java`, and `<log:GlobalSupplyChainManifest>` produces `log$colon$GlobalSupplyChainManifest.java`, regardless of the input filename.
+- Every generated public class or record is written to its own `.java` file beside the input, with no package declaration. Move the complete set into your application and add the same package declaration to each file. Existing output paths are checked before any files are written, and existing files are never overwritten.
 - Types are inferred from the sample. Review the generated model for values the sample does not cover, especially identifiers that must remain strings.
-- Nested objects become nested types; JSON arrays and repeated XML elements become `List` properties.
+- Nested objects become separate top-level types; JSON arrays and repeated XML elements become `List` properties. Compile the generated files together, or use `javac -sourcepath .` from their directory so referenced source files are compiled automatically.
+- If inferred type names repeat, the generator adds a numeric suffix such as `Address2` and updates references. Names are compared without case to avoid filename conflicts on Windows and macOS. Names used by Java scalar types or JAX annotations are reserved; rename the JSON input file or XML root element if its root type conflicts.
+- Use a separate input directory for each independent model to avoid clashes with previously generated types.
 - Mutable classes have `name()` getters and `name(value)` setters annotated with `@JsonProperty`. Compile constructor-bound classes with `-parameters` so JAX can match constructor arguments.
 - XML prefixes and special characters use the [name-encoding convention](#special-character-encoding), such as `$colon$` for `:` and `$hyphen$` for `-`.
+
+### XML elements with attributes and text
+
+Use `pojo` or `with-constructor` for XML such as identifiers, measurements and monetary values:
+
+```java
+String xml = """
+        <OrganizationID qualifier="DUNS">094827165</OrganizationID>
+        """;
+```
+
+JAX maps attributes with `@XmlAttribute` and the element's own text with `@XmlText`. A hand-written model can be as small as:
+
+```java
+import com.lemadane.jax.XmlAttribute;
+import com.lemadane.jax.XmlText;
+
+public class OrganizationID {
+    @XmlAttribute public String qualifier;
+    @XmlText public String value;
+}
+```
+
+```java
+OrganizationID id = Jax.toObject(xml, OrganizationID.class);
+System.out.println(id.qualifier); // DUNS
+System.out.println(id.value);     // 094827165
+String output = Jax.toXml(id);    // Text stays inside OrganizationID, with no <value> child.
+```
+
+The generator names the text field `$text` and uses `String` to preserve leading zeros, whitespace and decimal spelling. Generated constructor parameters also carry `@XmlText`. Hand-written models can use scalar types such as `BigDecimal`, enums, or `Optional<BigDecimal>`; annotate both the backing field and constructor parameter when using constructor binding. Only one text field is allowed per class, including inherited fields.
+
+### Why XML attributes and text currently require classes
+
+**This is a current JAX limitation, not a limitation of Java records.** JAX uses separate mapping implementations for records and ordinary classes. The class implementation supports `@XmlAttribute` and `@XmlText` on fields and constructor parameters; the record implementation does not yet bind these annotations to record components for reading and writing.
+
+For example, the `OrganizationID` element above has two values: its `qualifier` attribute and its text, `094827165`. Use the working POJO example above, or generate it with `--create pojo` or `--create with-constructor`. Annotating components of a hand-written record does **not** enable this mapping in the current release.
+
+Records remain supported for complex JSON and XML represented through child-element components without attributes. Adding equivalent support for attributed XML records requires changes to source generation, record reading, and record serialization, followed by the same complete-document round-trip tests. That support is not included yet.
+
+### Complete supply-chain XML example
+
+The [complete manifest](src/test/resources/com/lemadane/jax/cli/supply-chain-manifest.xml) includes namespace prefixes, XML attributes, organization IDs, three transport legs, containers, pallets, IoT readings, dangerous goods, and customs values. Its pasted markup has been repaired; the supplied values and namespace URIs are retained.
+
+**Browse the saved Java models:** [POJOs](examples/supply-chain/pojo/) and [classes with constructors](examples/supply-chain/with-constructor/) each contain 64 separate source files. Start with [log$colon$GlobalSupplyChainManifest.java](examples/supply-chain/pojo/log$colon$GlobalSupplyChainManifest.java). Choose one complete directory; the two styles use the same type names.
+
+From the repository root, generate and compile its individual Java files:
+
+```bash
+./gradlew jar
+mkdir -p generated/supply-chain
+cp src/test/resources/com/lemadane/jax/cli/supply-chain-manifest.xml generated/supply-chain/
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo generated/supply-chain/supply-chain-manifest.xml
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar generated/supply-chain/*.java
+```
+
+Use a fresh directory to try `with-constructor`. Each generated type has its own source file; no nested classes are generated. Namespace declarations become `@XmlAttribute` fields so prefixes remain bound when writing XML. Repeated objects combine their fields recursively; properties absent from some occurrences use nullable types, and numeric types widen when needed.
+
+Once the generated classes are on your application's classpath:
+
+```java
+String xml = Files.readString(Path.of("generated/supply-chain/supply-chain-manifest.xml"));
+var manifest = Jax.toObject(xml, log$colon$GlobalSupplyChainManifest.class);
+String output = Jax.toXml(manifest);
+var restored = Jax.toObject(output, log$colon$GlobalSupplyChainManifest.class);
+```
+
+The [CLI end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) generates and compiles both class styles, compares every qualified element name, attribute and leaf value after serialization, and re-reads the result. Formatting, comments, CDATA boundaries and ordering of different child properties are not preserved. This is a mapping test, not validation against an XSD.
+
+**Remaining boundaries:** XML record generation does not support attributes. Mixed content with interleaved text and child elements (for example, `before <b>bold</b> after`) is rejected by the generator and by `@XmlText` mapping because a single text property cannot represent its ordering.
+
+### What the API round-trip tests compare
+
+**Both complete fixtures passed their public-API round-trip tests.** The latest verified run passed all six dedicated cases below, plus the full suite of **345 tests** with **97.19% line coverage**.
+
+| Fixture | API/model style | Verified result |
+| --- | --- | --- |
+| Complex organization JSON | `Document` | **Passed** — original structure and values preserved |
+| Complex organization JSON | Records | **Passed** — all original values preserved, with two empty-list defaults |
+| Complex organization JSON | POJOs | **Passed** — all original values preserved, with two `null` defaults |
+| Complex organization JSON | Constructor-based classes | **Passed** — all original values preserved, with two `null` defaults |
+| Supply-chain XML | POJOs | **Passed** — compared elements, attributes, namespaces, and values preserved |
+| Supply-chain XML | Constructor-based classes | **Passed** — compared elements, attributes, namespaces, and values preserved |
+
+XML records with attributes are **not supported** and are not included among these passing cases. Results describe data comparisons, not byte-for-byte equality; the exact comparison rules and JSON defaults are explained below.
+
+The [public-API end-to-end tests](src/test/java/com/lemadane/jax/ComplexDocumentRoundTripE2E.java) use both complete fixtures and the saved Java models independently of the CLI. They compile each model style, call the public `Jax` methods, compare the full result, and repeat the round trip to verify stability. The separate CLI tests also verify source generation.
+
+| API path | Comparison with the original fixture |
+| --- | --- |
+| Complex JSON → `Document` → JSON | The original structure and values are preserved, including explicit `null` values and absent properties. |
+| Complex JSON → records → JSON | All original values are preserved. Partial mapping adds an empty `blockers` list to milestone M1 and an empty `deliverables` list to M2. |
+| Complex JSON → either POJO style → JSON | All original values are preserved. The same two missing milestone properties are added as `null`. |
+| Supply-chain XML → either POJO style → XML | Every qualified element name, attribute, namespace declaration, leaf value, and repeated-element occurrence is compared. Both styles must preserve these values on the second round trip too. |
+
+**Equivalent data does not mean identical file text.** JSON whitespace, property order, and numeric spelling can change. XML formatting, comments, CDATA boundaries, and ordering between differently named child properties can change; repeated elements with the same name retain their order. The JSON model tests explicitly check the two added defaults, remove only those additions for comparison, and require every original value to match. Use `Document` when preserving the original JSON property presence matters.
+
+Run just these API checks from the repository root:
+
+```bash
+./gradlew test --tests 'com.lemadane.jax.ComplexDocumentRoundTripE2E'
+```
 
 ### Troubleshooting
 
@@ -567,7 +765,7 @@ The [end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) generat
 | `./gradlew: Permission denied` | On Linux/macOS, run `chmod +x gradlew`, then retry. |
 | `Unable to access jarfile` | Run `./gradlew jar` from the repository root and check the JAR path. Quote paths containing spaces. |
 | Input file cannot be found | Check the current directory or use an absolute path ending in `.json` or `.xml`. |
-| Generated Java file already exists | Move or rename the existing generated file before regenerating. Preserve any manual edits. |
+| Generated Java file already exists | Move the complete set of previously generated Java files before regenerating or use a fresh directory. Preserve any manual edits. |
 | `package com.lemadane.jax does not exist` or `NoClassDefFoundError` | Include the JAX JAR with `-cp` when compiling and running. Runtime classpaths above include both `.` and the JAR. |
 | Main class cannot be found | Run from the directory containing the compiled classes; use `:` between classpath entries on Linux/macOS and `;` on Windows. |
 | XML root-name mismatch | Match the generated top-level class name to the XML root, using the documented encoding for special characters. |
@@ -740,7 +938,7 @@ Import `com.lemadane.jax.JsonProperty` to opt in setter methods for either JSON 
 For constructor-bound classes, compile the class with `-parameters` so Jax can match constructor arguments to input property names:
 
 ```shell
-javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar Person.java
+javac -parameters -sourcepath . -cp build/libs/jax-0.2.0-SNAPSHOT.jar Person.java
 ```
 
 For XML-to-POJO mapping, use public fields or public one-argument setters annotated with `@JsonProperty`, named after the property (`name(String value)`) or using JavaBean naming (`setName(String value)`):
@@ -1111,6 +1309,18 @@ To build the library, run tests, checkstyle static analysis, and verify JaCoCo c
 ```
 
 `build` runs the tests, Checkstyle, and the 97% line-coverage gate. The [Java CI workflow](.github/workflows/ci.yml) runs these checks on every push and pull request and uploads verification reports, including on failure. Publishing on `main` or a published release requires this job to succeed. To block merges when verification fails, configure the repository ruleset or branch protection to require the `build-and-test` status check.
+
+### Verification coverage
+
+The latest local Java 17 verification passed the full build, Checkstyle, and coverage gate:
+
+| Check | Result |
+| --- | --- |
+| Tests | 345 passed; no failures or skipped tests |
+| Line coverage | 97.19% (required: 97%) |
+| Branch coverage | 91.51% |
+
+Generation tests compile every emitted file and verify that all generated types are top-level. They cover all three model styles, JSON and XML round trips, XML attributes and text, duplicate type names, protection of existing files, and the complex organization payload. The complete supply-chain XML is generated and round-trip tested with both POJO styles; XML records with attributes remain unsupported. Dedicated public-API tests also compile the saved JSON and XML models and compare both complete fixtures independently of CLI generation. These figures describe the verified revision; rerun the build after changes for current results.
 
 ## Performance benchmarks
 

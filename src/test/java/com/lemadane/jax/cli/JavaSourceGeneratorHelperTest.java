@@ -98,29 +98,87 @@ class JavaSourceGeneratorHelperTest {
     var schema = JavaSourceGenerator.parseXml(xml, "Root");
     assertThat(JavaSourceGenerator.containsAttributes(schema)).isFalse();
     assertThat(JavaSourceGenerator.containsLists(schema)).isTrue();
-    String source = JavaSourceGenerator.generate("Root", xml, true, JavaSourceGenerator.Style.RECORD);
-    assertThat(source).contains("public record Root(", "public record Child(", "List<Integer> value")
+    var sources = JavaSourceGenerator.generate("Root", xml, true, JavaSourceGenerator.Style.RECORD);
+    assertThat(sources).containsOnlyKeys("Root.java", "Child.java");
+    assertThat(sources.get("Root.java")).contains("public record Root(Child child)")
+        .doesNotContain("public record Child", "XmlAttribute");
+    assertThat(sources.get("Child.java")).contains("public record Child(List<Integer> value)")
         .doesNotContain("XmlAttribute");
   }
 
   @Test
-  void omitsNamespaceDeclarationsFromSchemaProperties() {
+  void preservesNamespaceDeclarationsInSchemaProperties() {
     var root = new JavaSourceGenerator.XmlNode("root");
     root.attributes.put("xmlns", "urn:default");
     root.attributes.put("xmlns:p", "urn:prefix");
     root.attributes.put("id", "1");
-    assertThat(JavaSourceGenerator.xmlObject("Root", root).fields).containsOnlyKeys("id");
+    assertThat(JavaSourceGenerator.xmlObject("Root", root).fields).containsOnlyKeys("id", "xmlns", "xmlns$colon$p");
   }
 
   @Test
-  void rendersNestedPojoClassesAndAttributeOnlyParameters() {
-    String generated = JavaSourceGenerator.generate("Root", "<root><child id=\"1\"><value>x</value></child></root>",
+  void rendersSeparatePojoClassesAndAttributeOnlyParameters() {
+    var generated = JavaSourceGenerator.generate("Root", "<root><child id=\"1\"><value>x</value></child></root>",
         true, JavaSourceGenerator.Style.POJO);
-    assertThat(generated).contains("public static class Child", "String value");
+    assertThat(generated).containsOnlyKeys("Root.java", "Child.java");
+    assertThat(generated.get("Child.java")).contains("public class Child", "String value");
+    assertThat(generated.get("Root.java")).doesNotContain("class Child");
     var schema = JavaSourceGenerator.parseXml("<root id=\"1\"><value>x</value></root>", "Root");
     StringBuilder parameters = new StringBuilder();
     JavaSourceGenerator.appendParameters(parameters, schema, true);
     assertThat(parameters).hasToString("@XmlAttribute(\"id\") int id");
+  }
+
+  @Test
+  void avoidsCaseInsensitiveTypeNameCollisionsAndReservedRootNames() {
+    var sources = JavaSourceGenerator.generate("Root", "{\"name\":{},\"NAME\":{}}",
+        false, JavaSourceGenerator.Style.RECORD);
+    assertThat(sources).containsOnlyKeys("Root.java", "Name.java", "NAME2.java");
+    assertThatThrownBy(() -> JavaSourceGenerator.generate("String", "{}", false, JavaSourceGenerator.Style.RECORD))
+        .isInstanceOf(DataMappingException.class).hasMessageContaining("Rename the input file");
+  }
+
+  @Test
+  void mergesNestedXmlSchemasAndWidensScalarValues() {
+    var schema = JavaSourceGenerator.parseXml("""
+        <Root><item enabled="true"><child><value>1</value></child></item>
+        <item><child><value>2.5</value><extra>x</extra></child></item></Root>
+        """, "Root");
+    var item = schema.fields.get("item").type.object;
+    assertThat(item.fields.get("enabled").typeName()).isEqualTo("Boolean");
+    var child = item.fields.get("child").type.object;
+    assertThat(child.fields).containsOnlyKeys("value", "extra");
+    assertThat(child.fields.get("value").typeName()).isEqualTo("java.math.BigDecimal");
+    assertThat(JavaSourceGenerator.parseXml("<Root><v>1</v><v>text</v></Root>", "Root")
+        .fields.get("v").typeName()).isEqualTo("List<String>");
+    assertThat(JavaSourceGenerator.parseXml("<Root><v>1</v><v>2147483648</v></Root>", "Root")
+        .fields.get("v").typeName()).isEqualTo("List<Long>");
+    assertThat(JavaSourceGenerator.parseXml("<Root><v>1</v><v>9223372036854775808</v></Root>", "Root")
+        .fields.get("v").typeName()).isEqualTo("List<java.math.BigInteger>");
+  }
+
+  @Test
+  void rejectsIncompatibleScalarAndStructuredXmlSamples() {
+    for (String xml : List.of(
+        "<Root><v>1</v><v id=\"2\">two</v></Root>",
+        "<Root><item><v>1</v></item><item><v><child>2</child></v></item></Root>",
+        "<Root><item><v><child>2</child></v></item><item><v>1</v></item></Root>")) {
+      assertThatThrownBy(() -> JavaSourceGenerator.parseXml(xml, "Root"))
+          .isInstanceOf(DataMappingException.class).hasMessageContaining("scalar and object");
+    }
+  }
+
+  @Test
+  void preservesNamespaceDeclarationsAndGeneratesTextParameters() {
+    var sources = JavaSourceGenerator.generate(null, """
+        <p:Amount xmlns:p="urn:prices" xmlns="urn:default" unit="EUR">001.20</p:Amount>
+        """, true, JavaSourceGenerator.Style.WITH_CONSTRUCTOR);
+    assertThatThrownBy(() -> JavaSourceGenerator.generate(null, "<String id=\"1\"/>",
+        true, JavaSourceGenerator.Style.POJO)).isInstanceOf(DataMappingException.class)
+        .hasMessageContaining("Rename the XML root element");
+    assertThat(sources).containsOnlyKeys("p$colon$Amount.java");
+    assertThat(sources.get("p$colon$Amount.java"))
+        .contains("@XmlAttribute(\"xmlns:p\") String xmlns$colon$p", "@XmlAttribute(\"xmlns\") String xmlns",
+            "@XmlText String $text", "import com.lemadane.jax.XmlText;");
   }
 
 }

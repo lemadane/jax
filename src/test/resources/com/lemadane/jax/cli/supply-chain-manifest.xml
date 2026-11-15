@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<log:GlobalSupplyChainManifest xmlns:log="http://enterprise-logistics.org" xmlns:tms="http://enterprise-logistics.org" xmlns:wms="http://enterprise-logistics.org" xmlns:cus="http://enterprise-logistics.org" xmlns:iot="http://enterprise-logistics.org" xmlns:xsi="http://w3.org" xsi:schemaLocation="http://enterprise-logistics.org GlobalSupplyChainManifest_v4.2.xsd" manifestID="MNF-2026-884920-INTL" schemaVersion="4.2.1" environment="PRODUCTION" generatedTimestamp="2026-11-15T10:30:00Z">
+    <!-- 1. INTERCHANGE & EDI CONTROL HEADER -->
+    <log:InterchangeHeader>
+        <log:Sender>
+            <log:OrganizationID qualifier="DUNS">094827165</log:OrganizationID>
+            <log:Name>Aetheris Global Logistics Corp.</log:Name>
+            <log:SystemID>TMS-APAC-CORE-01</log:SystemID>
+        </log:Sender>
+        <log:Receiver>
+            <log:OrganizationID qualifier="SCAC">MSCU</log:OrganizationID>
+            <log:Name>Mediterranean Shipping &amp; Intermodal Partners</log:Name>
+            <log:SystemID>EDI-GATEWAY-EU</log:SystemID>
+        </log:Receiver>
+        <log:SecurityAudit>
+            <log:DigitalSignatureAlgorithm>SHA256withRSA</log:DigitalSignatureAlgorithm>
+            <log:Checksum>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</log:Checksum>
+            <log:ComplianceFramework>C-TPAT / AEO-Tier1</log:ComplianceFramework>
+        </log:SecurityAudit>
+    </log:InterchangeHeader>
+    <!-- 2. SHIPMENT MASTER & COMMERCIAL PARTIES -->
+    <log:ShipmentMaster masterBillOfLading="MBOL-992837465" houseBillOfLading="HBOL-11223344">
+        <log:ServiceLevel incoterms="CIP" incotermsVersion="2020" serviceType="EXPEDITED_COLD_CHAIN" paymentTerms="PREPAID"/>
+        <log:Parties>
+            <log:Party role="SHIPPER" taxID="CN-91310000789456123X">
+                <log:Name>Shenzhen BioTech Precision Instruments Ltd.</log:Name>
+                <log:Address>
+                    <log:Street>Building 14, High-Tech Industrial Park, Nanshan District</log:Street>
+                    <log:City>Shenzhen</log:City>
+                    <log:ProvinceState>Guangdong</log:ProvinceState>
+                    <log:PostalCode>518057</log:PostalCode>
+                    <log:CountryCode iso="CN">China</log:CountryCode>
+                    <log:GeoCoordinates lat="22.543096" lon="114.057865"/>
+                </log:Address>
+                <log:Contact department="Export Compliance">
+                    <log:FullName>Wei Chen</log:FullName>
+                    <log:Phone>+86-755-8692-0011</log:Phone>
+                    <log:Email>w.chen@szbiotech-example.cn</log:Email>
+                </log:Contact>
+            </log:Party>
+            <log:Party role="CONSIGNEE" taxID="DE-812938475">
+                <log:Name>Rheinland Medizintechnik GmbH</log:Name>
+                <log:Address>
+                    <log:Street>Industriestraße 42-48</log:Street>
+                    <log:City>Frankfurt am Main</log:City>
+                    <log:ProvinceState>Hesse</log:ProvinceState>
+                    <log:PostalCode>60314</log:PostalCode>
+                    <log:CountryCode iso="DE">Germany</log:CountryCode>
+                    <log:GeoCoordinates lat="50.110924" lon="8.682127"/>
+                </log:Address>
+            </log:Party>
+            <log:Party role="CUSTOMS_BROKER" licenseNumber="EORI-DE4492019283">
+                <log:Name>Hanseatic Customs &amp; Trade Advisory</log:Name>
+            </log:Party>
+        </log:Parties>
+        <!-- 3. MULTI-MODAL ROUTING & TRANSPORT LEGS -->
+        <tms:RoutingItinerary totalDistanceKm="19842.5" estimatedTotalTransitHours="648">
+            <!-- Leg 1: Origin Drayage -->
+            <tms:TransportLeg sequence="1" mode="ROAD" status="COMPLETED">
+                <tms:Carrier scac="CNTR" name="SinoTrans Heavy Haulage"/>
+                <tms:Equipment equipmentType="TRACTOR_TRAILER" licensePlate="粤B-8921X" vin="LZGJL5G49MX092831"/>
+                <tms:Origin locationCode="CN-SZX-WH04" facilityType="WAREHOUSE">
+                    <tms:ActualDeparture>2026-11-10T06:15:00+08:00</tms:ActualDeparture>
+                </tms:Origin>
+                <tms:Destination locationCode="CNYTN" facilityType="SEAPORT_TERMINAL">
+                    <tms:TerminalName>Yantian International Container Terminals (YICT)</tms:TerminalName>
+                    <tms:ActualArrival>2026-11-10T09:40:00+08:00</tms:ActualArrival>
+                </tms:Destination>
+            </tms:TransportLeg>
+            <!-- Leg 2: Main Ocean Freight -->
+            <tms:TransportLeg sequence="2" mode="MARITIME" status="IN_TRANSIT">
+                <tms:Carrier scac="MSCU" name="Mediterranean Shipping Company"/>
+                <tms:Vessel imoNumber="9839430" mmsi="354892000" flag="PA">
+                    <tms:VesselName>MSC GULSUN</tms:VesselName>
+                    <tms:VoyageNumber>FE645W</tms:VoyageNumber>
+                </tms:Vessel>
+                <tms:Origin locationCode="CNYTN" facilityType="PORT_OF_LOADING">
+                    <tms:EstimatedDeparture>2026-11-12T18:00:00+08:00</tms:EstimatedDeparture>
+                    <tms:ActualDeparture>2026-11-12T19:22:00+08:00</tms:ActualDeparture>
+                </tms:Origin>
+                <tms:IntermediateStops>
+                    <tms:PortCall sequence="1" locationCode="SGSIN" operation="TRANSSHIPMENT_BUNKER">
+                        <tms:ScheduledArrival>2026-11-16T08:00:00+08:00</tms:ScheduledArrival>
+                    </tms:PortCall>
+                    <tms:PortCall sequence="2" locationCode="EGSUZ" operation="CANAL_TRANSIT">
+                        <tms:ScheduledArrival>2026-11-28T03:00:00+02:00</tms:ScheduledArrival>
+                    </tms:PortCall>
+                </tms:IntermediateStops>
+                <tms:Destination locationCode="NLRTM" facilityType="PORT_OF_DISCHARGE">
+                    <tms:EstimatedArrival>2026-12-06T14:00:00+01:00</tms:EstimatedArrival>
+                </tms:Destination>
+            </tms:TransportLeg>
+            <!-- Leg 3: Inland Rail Shuttle -->
+            <tms:TransportLeg sequence="3" mode="RAIL" status="PLANNED">
+                <tms:Carrier uicCode="2180" name="DB Cargo Eurasia / Rhine-Alpine Corridor"/>
+                <tms:TrainID>RHEIN-EXP-409</tms:TrainID>
+                <tms:Origin locationCode="NLRTM" facilityType="RAIL_RAMP">
+                    <tms:EstimatedDeparture>2026-12-07T22:00:00+01:00</tms:EstimatedDeparture>
+                </tms:Origin>
+                <tms:Destination locationCode="DEFRA-DUSS" facilityType="INLAND_TERMINAL">
+                    <tms:EstimatedArrival>2026-12-08T08:30:00+01:00</tms:EstimatedArrival>
+                </tms:Destination>
+            </tms:TransportLeg>
+        </tms:RoutingItinerary>
+        <!-- 4. CONTAINER, PALLET & SKU CARGO HIERARCHY -->
+        <wms:CargoManifest totalContainers="1" totalPallets="2" totalGrossWeightKg="14850.75" totalVolumeCbm="54.20">
+            <wms:Container containerNumber="MSCU9482710" isoSizeType="45R1" description="40ft High Cube Reefer">
+                <wms:Seals>
+                    <wms:Seal issuer="CARRIER" type="HIGH_SECURITY_BOLT">SL-9948271</wms:Seal>
+                    <wms:Seal issuer="CUSTOMS" type="ELECTRONIC_RFID">CN-CUS-88210</wms:Seal>
+                </wms:Seals>
+                <wms:WeightsAndMeasures>
+                    <wms:TareWeight unit="KG">4800.00</wms:TareWeight>
+                    <wms:PayloadWeight unit="KG">10050.75</wms:PayloadWeight>
+                    <wms:GrossWeight unit="KG">14850.75</wms:GrossWeight>
+                    <wms:VGM verifiedBy="YICT-WEIGHBRIDGE-04" method="METHOD_1" timestamp="2026-11-10T09:55:12+08:00"/>
+                </wms:WeightsAndMeasures>
+                <wms:ReeferSettings active="true">
+                    <wms:SetPointTemperature unit="CELSIUS">4.0</wms:SetPointTemperature>
+                    <wms:MinAllowedTemp unit="CELSIUS">2.0</wms:MinAllowedTemp>
+                    <wms:MaxAllowedTemp unit="CELSIUS">6.0</wms:MaxAllowedTemp>
+                    <wms:RelativeHumidityPercent>65</wms:RelativeHumidityPercent>
+                    <wms:VentilationCmh>15</wms:VentilationCmh>
+                </wms:ReeferSettings>
+                <!-- IoT Sensor Telemetry Stream -->
+                <iot:TelemetryDevice deviceID="SENS-ORBCOMM-77412" batteryPercent="94" firmware="v3.8.2">
+                    <iot:SensorReadings>
+                        <iot:Reading timestamp="2026-11-15T08:00:00Z" tempC="3.9" humidity="64.2" shockG="0.12" doorOpen="false">
+                            <iot:GPS lat="14.599512" lon="112.984222" speedKnots="18.4" heading="215"/>
+                        </iot:Reading>
+                        <iot:Reading timestamp="2026-11-15T10:00:00Z" tempC="4.1" humidity="64.8" shockG="0.15" doorOpen="false">
+                            <iot:GPS lat="13.982104" lon="112.410922" speedKnots="18.6" heading="214"/>
+                        </iot:Reading>
+                    </iot:SensorReadings>
+                </iot:TelemetryDevice>
+                <!-- Handling Units (Pallets) -->
+                <wms:HandlingUnits>
+                    <!-- Pallet 1: Standard Cold-Chain Medical Diagnostics -->
+                    <wms:HandlingUnit sscc="003761234500000018" packagingType="EURO_PALLET_ISPM15" stackable="false">
+                        <wms:Dimensions unit="CM" length="120" width="80" height="165"/>
+                        <wms:GrossWeight unit="KG">620.50</wms:GrossWeight>
+                        <wms:WarehouseBinOrigin zone="COLD-Z2" aisle="B04" rack="R12" level="L01"/>
+                        <wms:LineItems>
+                            <wms:LineItem lineNumber="10" sku="BIO-REAG-900X" batchNumber="LOT-2026-11A" expirationDate="2028-05-01">
+                                <wms:Description>Automated Hematology Analyzer Reagent Kit</wms:Description>
+                                <wms:Quantity unitOfMeasure="BOX">120</wms:Quantity>
+                                <wms:SerialNumbers>
+                                    <wms:Serial rangeStart="SN-900X-0001" rangeEnd="SN-900X-0120"/>
+                                </wms:SerialNumbers>
+                                <cus:CustomsValuation hsCode="3822.19.0090" countryOfOrigin="CN">
+                                    <cus:UnitValue currency="EUR">410.00</cus:UnitValue>
+                                    <cus:TotalLineValue currency="EUR">49200.00</cus:TotalLineValue>
+                                    <cus:DutyRatePercent>0.0</cus:DutyRatePercent>
+                                    <cus:PreferentialTariffCode>MFN-PHARMA-EXEMPT</cus:PreferentialTariffCode>
+                                </cus:CustomsValuation>
+                            </wms:LineItem>
+                        </wms:LineItems>
+                    </wms:HandlingUnit>
+                    <wms:HandlingUnit sscc="003761234500000025" packagingType="PLASTIC_PALLET_HDPE" stackable="false">
+                        <wms:Dimensions unit="CM" length="120" width="100" height="140"/>
+                        <wms:GrossWeight unit="KG">840.25</wms:GrossWeight>
+                        <wms:LineItems>
+                            <wms:LineItem lineNumber="20" sku="PWR-LFP-48V100" batchNumber="BAT-2026-Q4">
+                                <wms:Description>Medical Grade Lithium Iron Phosphate Backup Module</wms:Description>
+                                <wms:Quantity unitOfMeasure="UNIT">24</wms:Quantity>
+                                <wms:DangerousGoods regulated="true" regulationCode="IMDG / ADR">
+                                    <wms:UNNumber>UN3480</wms:UNNumber>
+                                    <wms:ProperShippingName>LITHIUM ION BATTERIES</wms:ProperShippingName>
+                                    <wms:HazardClass>9</wms:HazardClass>
+                                    <wms:PackingGroup>II</wms:PackingGroup>
+                                    <wms:NetExplosiveOrLithiumWeight unit="KG">14.4</wms:NetExplosiveOrLithiumWeight>
+                                    <wms:WattHourRating>4800Wh</wms:WattHourRating>
+                                    <wms:EmergencyContact provider="CHEMTREC" phone="+1-703-527-3887" contractID="CT-99812"/>
+                                    <wms:EMSCode>F-A, S-I</wms:EMSCode>
+                                </wms:DangerousGoods>
+                                <cus:CustomsValuation hsCode="8507.60.0020" countryOfOrigin="CN">
+                                    <cus:UnitValue currency="EUR">1150.00</cus:UnitValue>
+                                    <cus:TotalLineValue currency="EUR">27600.00</cus:TotalLineValue>
+                                    <cus:DutyRatePercent>2.7</cus:DutyRatePercent>
+                                </cus:CustomsValuation>
+                            </wms:LineItem>
+                        </wms:LineItems>
+                    </wms:HandlingUnit>
+                </wms:HandlingUnits>
+            </wms:Container>
+        </wms:CargoManifest>
+        <cus:CustomsSummary declarationType="IM4-IMPORT-RELEASE" entryPointCode="NLRTM">
+            <cus:TotalInvoiceValue currency="EUR">76800.00</cus:TotalInvoiceValue>
+            <cus:FreightCharges currency="EUR">4850.00</cus:FreightCharges>
+            <cus:InsuranceCharges currency="EUR">620.00</cus:InsuranceCharges>
+            <cus:TotalCustomsStatisticalValue currency="EUR">82270.00</cus:TotalCustomsStatisticalValue>
+            <cus:RequiredCertificates>
+                <cus:Certificate type="CERTIFICATE_OF_ORIGIN" documentID="COO-CN-2026-99182" verified="true"/>
+                <cus:Certificate type="MSDS_DANGEROUS_GOODS" documentID="MSDS-LFP-8821" verified="true"/>
+                <cus:Certificate type="PHYTOSANITARY_ISPM15" documentID="IPPC-CN-44102" verified="true"/>
+            </cus:RequiredCertificates>
+        </cus:CustomsSummary>
+    </log:ShipmentMaster>
+</log:GlobalSupplyChainManifest>
