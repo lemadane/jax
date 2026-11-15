@@ -7,6 +7,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -29,6 +30,22 @@ public final class JsonObjectReader {
 
   JsonObjectReader() {
   }
+
+  static final ClassValue<ConstructorBindings> CONSTRUCTORS = new ClassValue<>() {
+    @Override
+    protected ConstructorBindings computeValue(Class<?> type) {
+      Constructor<?> defaultConstructor = null;
+      List<Constructor<?>> parameterized = new ArrayList<>();
+      for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+        if (constructor.getParameterCount() == 0) {
+          defaultConstructor = constructor;
+        } else {
+          parameterized.add(constructor);
+        }
+      }
+      return new ConstructorBindings(defaultConstructor, List.copyOf(parameterized));
+    }
+  };
 
   public static <T> T toObject(String json, Class<T> targetType) {
     return toObject(json, targetType, true);
@@ -60,11 +77,11 @@ public final class JsonObjectReader {
       }
       String propertyName = entry.getKey();
       String propertyPath = path + "." + entry.getKey();
-      Method setter = findSetter(targetType, propertyName, propertyPath);
+      SetterBinding setter = findSetterBinding(targetType, propertyName, propertyPath);
       if (setter == null) {
         String encodedName = DataNameCodec.encode(propertyName);
         if (!encodedName.equals(propertyName)) {
-          setter = findSetter(targetType, encodedName, propertyPath);
+          setter = findSetterBinding(targetType, encodedName, propertyPath);
         }
       }
       if (setter == null) {
@@ -76,11 +93,9 @@ public final class JsonObjectReader {
         );
       }
 
-      Class<?> parameterType = setter.getParameterTypes()[0];
-      Type genericType = setter.getGenericParameterTypes()[0];
-      Object value = readValue(parameterType, genericType, entry.getValue(), propertyPath, strict);
+      Object value = readValue(setter.parameterType(), setter.genericType(), entry.getValue(), propertyPath, strict);
       try {
-        setter.invoke(instance, value);
+        setter.method().invoke(instance, value);
       } catch (InvocationTargetException e) {
         Throwable cause = e.getCause() != null ? e.getCause() : e;
         throw new JsonMappingException("Setter for property \"" + entry.getKey() + "\" failed at " + propertyPath, cause);
@@ -97,13 +112,14 @@ public final class JsonObjectReader {
       String path,
       boolean strict
   ) {
+    ConstructorBindings bindings = CONSTRUCTORS.get(targetType);
+    if (bindings.parameterized().isEmpty()) {
+      return new ConstructorResult<>(createInstance(targetType), Set.of());
+    }
     List<Constructor<?>> matchingConstructors = new ArrayList<>();
     List<Set<String>> matchingPropertySets = new ArrayList<>();
     boolean missingParameterNames = false;
-    for (Constructor<?> constructor : targetType.getDeclaredConstructors()) {
-      if (constructor.getParameterCount() == 0) {
-        continue;
-      }
+    for (Constructor<?> constructor : bindings.parameterized()) {
       Set<String> consumedProperties = new LinkedHashSet<>();
       boolean matches = true;
       for (var parameter : constructor.getParameters()) {
@@ -188,6 +204,15 @@ public final class JsonObjectReader {
     return null;
   }
 
+  @SuppressWarnings("unchecked")
+  static <T> Constructor<T> defaultConstructor(Class<T> type) throws NoSuchMethodException {
+    Constructor<?> constructor = CONSTRUCTORS.get(type).defaultConstructor();
+    if (constructor != null) {
+      return (Constructor<T>) constructor;
+    }
+    throw new NoSuchMethodException(type.getName());
+  }
+
   static <T> T createInstance(Class<T> targetType) {
     if (targetType.isInterface() || Modifier.isAbstract(targetType.getModifiers())) {
       throw new JsonMappingException("Target type must be a concrete class: " + targetType.getName());
@@ -198,7 +223,7 @@ public final class JsonObjectReader {
       );
     }
     try {
-      Constructor<T> constructor = targetType.getDeclaredConstructor();
+      Constructor<T> constructor = defaultConstructor(targetType);
       if (!constructor.trySetAccessible()) {
         throw new JsonMappingException("No accessible no-argument constructor for " + targetType.getName());
       }
@@ -211,30 +236,40 @@ public final class JsonObjectReader {
     }
   }
 
-  static Method findSetter(Class<?> targetType, String propertyName, String path) {
-    List<Method> exactMatches = new ArrayList<>();
-    List<Method> beanMatches = new ArrayList<>();
-    String beanSetterName = propertyName.isEmpty()
-        ? ""
-        : "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
-
-    for (Method method : targetType.getMethods()) {
-      if (Modifier.isStatic(method.getModifiers()) || method.isBridge() || method.isSynthetic()
-          || method.getParameterCount() != 1 || !method.isAnnotationPresent(JsonProperty.class)) {
-        continue;
+  static final ClassValue<Map<String, List<SetterBinding>>> SETTERS = new ClassValue<>() {
+    @Override
+    protected Map<String, List<SetterBinding>> computeValue(Class<?> type) {
+      Map<String, List<SetterBinding>> methods = new HashMap<>();
+      for (Method method : type.getMethods()) {
+        if (!Modifier.isStatic(method.getModifiers()) && !method.isBridge() && !method.isSynthetic()
+            && method.getParameterCount() == 1 && method.isAnnotationPresent(JsonProperty.class)) {
+          methods.computeIfAbsent(method.getName(), key -> new ArrayList<>())
+              .add(new SetterBinding(method));
+        }
       }
-      if (method.getName().equals(propertyName)) {
-        exactMatches.add(method);
-      } else if (method.getName().equals(beanSetterName)) {
-        beanMatches.add(method);
-      }
+      methods.replaceAll((name, matches) -> List.copyOf(matches));
+      return Map.copyOf(methods);
     }
+  };
 
-    List<Method> matches = exactMatches.isEmpty() ? beanMatches : exactMatches;
+  static Method findSetter(Class<?> targetType, String propertyName, String path) {
+    SetterBinding binding = findSetterBinding(targetType, propertyName, path);
+    return binding == null ? null : binding.method();
+  }
+
+  static SetterBinding findSetterBinding(Class<?> targetType, String propertyName, String path) {
+    Map<String, List<SetterBinding>> methods = SETTERS.get(targetType);
+    List<SetterBinding> matches = methods.get(propertyName);
+    if (matches == null && !propertyName.isEmpty()) {
+      matches = methods.get("set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1));
+    }
+    if (matches == null) {
+      return null;
+    }
     if (matches.size() > 1) {
       throw new JsonMappingException("Multiple setters match property \"" + propertyName + "\" at " + path);
     }
-    return matches.isEmpty() ? null : matches.get(0);
+    return matches.get(0);
   }
 
   static Object readValue(
@@ -380,4 +415,35 @@ public final class JsonObjectReader {
   }
 
   record ConstructorResult<T>(T instance, Set<String> consumedProperties) {}
+
+  record ConstructorBindings(Constructor<?> defaultConstructor, List<Constructor<?>> parameterized) {}
+
+  static final class SetterBinding {
+    final Method method;
+    final Class<?> parameterType;
+    volatile Type genericType;
+
+    SetterBinding(Method method) {
+      this.method = method;
+      parameterType = method.getParameterTypes()[0];
+    }
+
+    Method method() {
+      return method;
+    }
+
+    Class<?> parameterType() {
+      return parameterType;
+    }
+
+    Type genericType() {
+      Type cached = genericType;
+      if (cached == null) {
+        // Resolve generic signatures only when selected, preserving failures for unused setters.
+        cached = method.getGenericParameterTypes()[0];
+        genericType = cached;
+      }
+      return cached;
+    }
+  }
 }

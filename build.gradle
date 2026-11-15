@@ -141,3 +141,56 @@ publishing {
         }
     }
 }
+
+// Optional library comparison: dependencies never enter the published JAX artifact.
+sourceSets {
+    comparison {
+        java.srcDirs = ['src/comparison/java', 'examples/complex-organization/pojo', 'examples/supply-chain/pojo']
+        resources.srcDir 'src/test/resources'
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+    comparisonTest {
+        compileClasspath += sourceSets.main.output + sourceSets.comparison.output
+        runtimeClasspath += sourceSets.main.output + sourceSets.comparison.output
+    }
+}
+
+configurations {
+    comparisonTestImplementation.extendsFrom comparisonImplementation, testImplementation
+    comparisonTestRuntimeOnly.extendsFrom comparisonRuntimeOnly, testRuntimeOnly
+}
+
+dependencies {
+    comparisonImplementation 'com.fasterxml.jackson.core:jackson-databind:2.20.1'
+    comparisonImplementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.20.1'
+    comparisonImplementation 'com.google.code.gson:gson:2.13.2'
+    comparisonImplementation 'org.openjdk.jmh:jmh-core:1.36'
+    comparisonAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.36'
+}
+
+tasks.register('comparisonTest', Test) {
+    description = 'Verify JAX, Jackson and Gson against the complete JSON/XML fixtures.'
+    group = 'verification'
+    testClassesDirs = sourceSets.comparisonTest.output.classesDirs
+    classpath = sourceSets.comparisonTest.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter tasks.named('test')
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('comparisonTest')
+}
+
+tasks.named('checkstyleComparison') {
+    source = fileTree('src/comparison/java')
+}
+
+tasks.register('compareLibraries', JavaExec) {
+    description = 'Run the separate JMH comparison after validating round-trip correctness.'
+    group = 'verification'
+    dependsOn tasks.named('comparisonTest')
+    classpath = sourceSets.comparison.runtimeClasspath
+    mainClass = 'com.lemadane.jax.comparison.ComparisonRunner'
+    args layout.buildDirectory.dir('results/library-comparison').get().asFile.absolutePath
+}

@@ -3,13 +3,13 @@ package com.lemadane.jax.xml.internal;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Modifier;
 import java.lang.reflect.AnnotatedElement;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.Set;
 
@@ -22,7 +22,7 @@ import com.lemadane.jax.reflect.RecordMetadata;
 import com.lemadane.jax.reflect.PojoPropertyReader;
 
 /**
-* Serializes Java objects by building a Jax-owned XML element tree.
+* Serializes Java objects directly and supports writing Jax-owned XML element trees.
 */
 public final class XmlObjectWriter {
 
@@ -39,9 +39,9 @@ public final class XmlObjectWriter {
       throw new XmlMappingException("XML root value must be a Java record or POJO: " + object.getClass().getName());
     }
     Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-    XmlElement root = toElement(object, rootName(object), visited);
     StringBuilder output = new StringBuilder();
-    writeElement(root, output, Map.of("xml", "http://www.w3.org/XML/1998/namespace"));
+    XmlDirectWriter.writeObject(object, rootName(object), output, visited, 1,
+        Map.of("xml", "http://www.w3.org/XML/1998/namespace"));
     return output.toString();
   }
 
@@ -77,31 +77,38 @@ public final class XmlObjectWriter {
   }
 
   static void appendPojoAttributes(Object object, XmlElement element) {
-    for (Class<?> current = object.getClass(); current != null && current != Object.class; current = current.getSuperclass()) {
-      for (Field field : current.getDeclaredFields()) {
-        if (!field.isAnnotationPresent(XmlAttribute.class)
-            || Modifier.isStatic(field.getModifiers())
-            || field.isSynthetic()) {
-          continue;
+    readAttributes(object, element.attributes);
+  }
+
+  static Map<String, String> readAttributes(Object object) {
+    var fields = XmlObjectReader.attributeFields(object.getClass());
+    if (fields.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, String> attributes = new LinkedHashMap<>();
+    readAttributes(object, attributes);
+    return attributes;
+  }
+
+   static void readAttributes(Object object, Map<String, String> attributes) {
+    for (Field field : XmlObjectReader.attributeFields(object.getClass())) {
+      try {
+        if (!field.canAccess(object) && !field.trySetAccessible()) {
+          throw new XmlMappingException("Cannot access annotated XML attribute field " + field.getName()
+              + " on " + object.getClass().getName());
         }
-        try {
-          if (!field.canAccess(object) && !field.trySetAccessible()) {
-            throw new XmlMappingException("Cannot access annotated XML attribute field " + field.getName()
-                + " on " + object.getClass().getName());
-          }
-          Object value = field.get(object);
-          if (value instanceof Optional<?> optional) {
-            value = optional.orElse(null);
-          }
-          if (value != null) {
-            element.addAttribute(xmlAttributeName(field), value.toString());
-          }
-        } catch (IllegalAccessException | IllegalArgumentException e) {
-          throw new XmlMappingException(
-              "Failed to access XML attribute field " + field.getName() + " on " + object.getClass().getName(),
-              e
-          );
+        Object value = field.get(object);
+        if (value instanceof Optional<?> optional) {
+          value = optional.orElse(null);
         }
+        if (value != null) {
+          attributes.put(xmlAttributeName(field), value.toString());
+        }
+      } catch (IllegalAccessException | IllegalArgumentException e) {
+        throw new XmlMappingException(
+            "Failed to access XML attribute field " + field.getName() + " on " + object.getClass().getName(),
+            e
+        );
       }
     }
   }
@@ -144,16 +151,21 @@ public final class XmlObjectWriter {
     }
   }
 
-  static boolean isXmlAttribute(Class<?> type, String fieldName) {
-    for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
-      try {
-        Field field = current.getDeclaredField(fieldName);
-        return field.isAnnotationPresent(XmlAttribute.class) || field.isAnnotationPresent(XmlText.class);
-      } catch (NoSuchFieldException e) {
-        continue;
+   static final ClassValue<Map<String, Boolean>> XML_FIELDS = new ClassValue<>() {
+    @Override
+    protected Map<String, Boolean> computeValue(Class<?> type) {
+      Map<String, Boolean> fields = new HashMap<>();
+      for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
+        for (Field field : current.getDeclaredFields()) {
+          fields.putIfAbsent(field.getName(), field.isAnnotationPresent(XmlAttribute.class) || field.isAnnotationPresent(XmlText.class));
+        }
       }
+      return Map.copyOf(fields);
     }
-    return false;
+  };
+
+  static boolean isXmlAttribute(Class<?> type, String fieldName) {
+    return XML_FIELDS.get(type).getOrDefault(fieldName, false);
   }
 
   static void appendProperty(XmlElement parent, String name, Object value, Set<Object> visited) {
@@ -262,27 +274,7 @@ public final class XmlObjectWriter {
   }
 
   static void writeElement(XmlElement element, StringBuilder output, Map<String, String> inheritedNamespaces) {
-    requireValidXmlQName(element.name());
-    Map<String, String> namespaces = new HashMap<>(inheritedNamespaces);
-    for (Map.Entry<String, String> attribute : element.attributes().entrySet()) {
-      if (attribute.getKey().equals("xmlns")) {
-        namespaces.put("", attribute.getValue());
-      } else if (attribute.getKey().startsWith("xmlns:")) {
-        namespaces.put(attribute.getKey().substring("xmlns:".length()), attribute.getValue());
-      }
-    }
-    requireBoundPrefix(element.name(), namespaces);
-    for (String attributeName : element.attributes().keySet()) {
-      requireValidXmlQName(attributeName);
-      if (!attributeName.equals("xmlns") && !attributeName.startsWith("xmlns:")) {
-        requireBoundPrefix(attributeName, namespaces);
-      }
-    }
-    output.append('<').append(element.name());
-    for (Map.Entry<String, String> attribute : element.attributes().entrySet()) {
-      output.append(' ').append(attribute.getKey()).append("=\"")
-          .append(escapeAttribute(attribute.getValue())).append('"');
-    }
+    Map<String, String> namespaces = writeStart(element.name(), element.attributes(), output, inheritedNamespaces);
     if (element.content().isEmpty()) {
       output.append("/>");
       return;
@@ -296,6 +288,34 @@ public final class XmlObjectWriter {
       }
     }
     output.append("</").append(element.name()).append('>');
+  }
+
+  static Map<String, String> writeStart(String name, Map<String, String> attributes,
+      StringBuilder output, Map<String, String> inheritedNamespaces) {
+    requireValidXmlQName(name);
+    Map<String, String> namespaces = inheritedNamespaces;
+    for (Map.Entry<String, String> attribute : attributes.entrySet()) {
+      String attributeName = attribute.getKey();
+      if (attributeName.equals("xmlns") || attributeName.startsWith("xmlns:")) {
+        if (namespaces == inheritedNamespaces) {
+          namespaces = new HashMap<>(inheritedNamespaces);
+        }
+        namespaces.put(attributeName.equals("xmlns") ? "" : attributeName.substring("xmlns:".length()), attribute.getValue());
+      }
+    }
+    requireBoundPrefix(name, namespaces);
+    for (String attributeName : attributes.keySet()) {
+      requireValidXmlQName(attributeName);
+      if (!attributeName.equals("xmlns") && !attributeName.startsWith("xmlns:")) {
+        requireBoundPrefix(attributeName, namespaces);
+      }
+    }
+    output.append('<').append(name);
+    for (Map.Entry<String, String> attribute : attributes.entrySet()) {
+      output.append(' ').append(attribute.getKey()).append("=\"")
+          .append(escapeAttribute(attribute.getValue())).append('"');
+    }
+    return namespaces;
   }
 
   static void requireBoundPrefix(String name, Map<String, String> namespaces) {
@@ -402,32 +422,35 @@ public final class XmlObjectWriter {
   }
 
   static String escapeXml(String input, boolean attribute) {
-    StringBuilder escaped = new StringBuilder(input.length());
+    StringBuilder escaped = null;
     for (int offset = 0; offset < input.length();) {
       int codePoint = input.codePointAt(offset);
       if (!isValidXmlCharacter(codePoint)) {
         throw new XmlMappingException("XML 1.0 does not permit character U+"
             + String.format("%04X", codePoint));
       }
-      offset += Character.charCount(codePoint);
-      switch (codePoint) {
-        case '&' -> escaped.append("&amp;");
-        case '<' -> escaped.append("&lt;");
-        case '>' -> escaped.append("&gt;");
-        case '"' -> {
-          if (attribute) {
-            escaped.append("&quot;");
-          } else {
-            escaped.append('"');
-          }
+      String replacement = switch (codePoint) {
+        case '&' -> "&amp;";
+        case '<' -> "&lt;";
+        case '>' -> "&gt;";
+        case '"' -> attribute ? "&quot;" : null;
+        case '\t' -> attribute ? "&#x9;" : null;
+        case '\n' -> attribute ? "&#xA;" : null;
+        case '\r' -> "&#xD;";
+        default -> null;
+      };
+      if (replacement != null) {
+        if (escaped == null) {
+          escaped = new StringBuilder(input.length());
+          escaped.append(input, 0, offset);
         }
-        case '\t' -> escaped.append(attribute ? "&#x9;" : "\t");
-        case '\n' -> escaped.append(attribute ? "&#xA;" : "\n");
-        case '\r' -> escaped.append("&#xD;");
-        default -> escaped.appendCodePoint(codePoint);
+        escaped.append(replacement);
+      } else if (escaped != null) {
+        escaped.appendCodePoint(codePoint);
       }
+      offset += Character.charCount(codePoint);
     }
-    return escaped.toString();
+    return escaped == null ? input : escaped.toString();
   }
 
   static boolean isValidXmlCharacter(int codePoint) {

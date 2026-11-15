@@ -1,0 +1,32 @@
+{
+  "startedAt" : "2026-11-15T15:04:32.751893190Z",
+  "javaVersion" : "17.0.17+10-LTS",
+  "javaVendor" : "Amazon.com Inc.",
+  "os" : "Linux 7.0.0-42-generic",
+  "architecture" : "amd64",
+  "availableProcessors" : 12,
+  "cpu" : "model name\t: Intel(R) Core(TM) i7-10710U CPU @ 1.10GHz",
+  "gitHead" : "3fcebc627a8c2537315af7c013a2d11f3ab809fc",
+  "workingTreeDirty" : true,
+  "jax" : "0.2.0-SNAPSHOT",
+  "jackson" : "2.20.1",
+  "gson" : "2.13.2",
+  "jmh" : "1.36",
+  "xmlInputProvider" : "com.ctc.wstx.stax.WstxInputFactory",
+  "xmlInputProviderVersion" : "7.1.1",
+  "launcherJvmArguments" : [ "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent" ],
+  "forkJvmArguments" : [ "-Xms512m", "-Xmx512m", "-Dcomparison.outputDirectory=/tmp/jax-reader-before/results" ],
+  "forks" : 2,
+  "threads" : 1,
+  "warmup" : "5 iterations x 1 second per fork",
+  "measurement" : "5 iterations x 1 second per fork",
+  "operation" : "String -> typed POJO -> String -> typed POJO; returned object consumed by JMH",
+  "jsonFixture" : {
+    "utf8Bytes" : 3773,
+    "sha256" : "787566830d9deb896352f449d5ab97d48169933c638b3112469982c600ed9112"
+  },
+  "xmlFixture" : {
+    "utf8Bytes" : 13948,
+    "sha256" : "ffaca55c15f30127e58baf6e1ff82b561616828a47c50e5358c96c7a9cb5b9bc"
+  }
+}

@@ -46,6 +46,7 @@ class JavaSourceGeneratorHelperTest {
 
   @Test
   void encodesKeywordsAndEscapesJavaStrings() {
+    assertThat(JavaSourceGenerator.JAVA_KEYWORDS).contains("private").doesNotContain("");
     for (String keyword : JavaSourceGenerator.JAVA_KEYWORDS) {
       String name = JavaSourceGenerator.javaName(keyword);
       assertThat(name).isNotEqualTo(keyword);

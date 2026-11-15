@@ -1,0 +1,562 @@
+--- a/src/main/java/com/lemadane/jax/json/internal/JsonParser.java
++++ b/src/main/java/com/lemadane/jax/json/internal/JsonParser.java
+@@ -3,6 +3,7 @@
+ import java.math.BigDecimal;
+ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
++import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+ 
+@@ -30,21 +31,35 @@
+   static final JsonNode.JsonBooleanNode FALSE_NODE = new JsonNode.JsonBooleanNode(false);
+   static final JsonNode.JsonNullNode NULL_NODE = new JsonNode.JsonNullNode();
+ 
++  final boolean buildTree;
+   final String json;
+   final int length;
+   int pos;
+ 
+   JsonParser(String json) {
++    this(json, true);
++  }
++
++   JsonParser(String json, boolean buildTree) {
++    this.buildTree = buildTree;
+     this.json = json;
+     this.length = json.length();
+     this.pos = 0;
+   }
+ 
+   public static JsonNode parse(String json) {
++    return parse(json, true);
++  }
++
++  static void validate(String json) {
++    parse(json, false);
++  }
++
++   static JsonNode parse(String json, boolean buildTree) {
+     if (json == null) {
+       throw new NullPointerException("json must not be null");
+     }
+-    JsonParser parser = new JsonParser(json);
++    JsonParser parser = new JsonParser(json, buildTree);
+     parser.skipWhitespace();
+     if (parser.pos >= parser.length) {
+       throw new JsonMappingException("Empty JSON content");
+@@ -94,11 +109,11 @@
+   JsonNode.JsonObjectNode parseObject(CharSequence path, int depth) {
+     expect('{', path);
+     skipWhitespace();
+-    Map<String, JsonNode> members = new LinkedHashMap<>();
++    Map<String, JsonNode> members = buildTree ? new LinkedHashMap<>() : new HashMap<>();
+ 
+     if (pos < length && json.charAt(pos) == '}') {
+       pos++;
+-      return new JsonNode.JsonObjectNode(members);
++      return buildTree ? new JsonNode.JsonObjectNode(members) : null;
+     }
+ 
+     StringBuilder currentPath = path instanceof StringBuilder builder ? builder : new StringBuilder(path);
+@@ -117,7 +132,8 @@
+         }
+         skipWhitespace();
+         expect(':', currentPath);
+-        members.put(key, parseValue(currentPath, depth));
++        JsonNode value = parseValue(currentPath, depth);
++        members.put(key, buildTree ? value : NULL_NODE);
+       } finally {
+         currentPath.setLength(parentLength);
+       }
+@@ -127,7 +143,7 @@
+         pos++;
+       } else if (pos < length && json.charAt(pos) == '}') {
+         pos++;
+-        return new JsonNode.JsonObjectNode(members);
++        return buildTree ? new JsonNode.JsonObjectNode(members) : null;
+       } else {
+         throw new JsonMappingException("Expected ',' or '}' in object at " + path);
+       }
+@@ -139,11 +155,11 @@
+   JsonNode.JsonArrayNode parseArray(CharSequence path, int depth) {
+     expect('[', path);
+     skipWhitespace();
+-    List<JsonNode> elements = new ArrayList<>();
++    List<JsonNode> elements = buildTree ? new ArrayList<>() : List.of();
+ 
+     if (pos < length && json.charAt(pos) == ']') {
+       pos++;
+-      return new JsonNode.JsonArrayNode(elements);
++      return buildTree ? new JsonNode.JsonArrayNode(elements) : null;
+     }
+ 
+     int index = 0;
+@@ -152,7 +168,10 @@
+     while (pos < length) {
+       currentPath.append('[').append(index).append(']');
+       try {
+-        elements.add(parseValue(currentPath, depth));
++        JsonNode value = parseValue(currentPath, depth);
++        if (buildTree) {
++          elements.add(value);
++        }
+       } finally {
+         currentPath.setLength(parentLength);
+       }
+@@ -163,7 +182,7 @@
+         pos++;
+       } else if (pos < length && json.charAt(pos) == ']') {
+         pos++;
+-        return new JsonNode.JsonArrayNode(elements);
++        return buildTree ? new JsonNode.JsonArrayNode(elements) : null;
+       } else {
+         throw new JsonMappingException("Expected ',' or ']' in array at " + path);
+       }
+@@ -173,7 +192,37 @@
+   }
+ 
+   JsonNode.JsonStringNode parseString(CharSequence path) {
++    if (!buildTree) {
++      validateString(path);
++      return null;
++    }
+     return new JsonNode.JsonStringNode(parseStringValue(path));
++  }
++
++   void validateString(CharSequence path) {
++    expect('"', path);
++    while (pos < length) {
++      char c = json.charAt(pos++);
++      if (c == '"') {
++        return;
++      }
++      if (c == '\\') {
++        if (pos >= length) {
++          throw new JsonMappingException("Unterminated escape sequence in string at " + path);
++        }
++        char escape = json.charAt(pos++);
++        switch (escape) {
++          case '"', '\\', '/', 'b', 'f', 'n', 'r', 't' -> {
++            // Valid escape; no decoded text is needed during validation.
++          }
++          case 'u' -> parseHex4(path);
++          default -> throw new JsonMappingException("Invalid escape character '\\" + escape + "' at " + path);
++        }
++      } else if (c < 0x20) {
++        throw new JsonMappingException("Unescaped control character 0x" + Integer.toHexString(c) + " in string at " + path);
++      }
++    }
++    throw new JsonMappingException("Unterminated string at " + path);
+   }
+ 
+   String parseStringValue(CharSequence path) {
+@@ -337,6 +386,11 @@
+     }
+     String raw = json.substring(start, pos);
+     validateNumberSize(raw, path);
++    // The grammar, token limit and exponent limit above guarantee that this
++    // numeric token is representable by BigDecimal; validation need not retain it.
++    if (!buildTree) {
++      return null;
++    }
+     try {
+       BigDecimal bd = new BigDecimal(raw);
+       return new JsonNode.JsonNumberNode(raw, bd);
+--- a/src/main/java/com/lemadane/jax/json/internal/JsonObjectReader.java
++++ b/src/main/java/com/lemadane/jax/json/internal/JsonObjectReader.java
+@@ -43,6 +43,19 @@
+   }
+ 
+   public static <T> T toObject(String json, Class<T> targetType, boolean strict) {
++    if (hasOnlyDefaultConstructor(targetType)) {
++      return JsonDirectReader.read(json, targetType, strict);
++    }
++    return readTree(json, targetType, strict);
++  }
++
++  static boolean hasOnlyDefaultConstructor(Class<?> type) {
++    var constructors = CONSTRUCTORS.get(type);
++    return !type.isRecord() && !Modifier.isAbstract(type.getModifiers())
++        && constructors.size() == 1 && constructors.get(0).getParameterCount() == 0;
++  }
++
++  static <T> T readTree(String json, Class<T> targetType, boolean strict) {
+     JsonParser.JsonNode root = JsonParser.parse(json);
+     if (!(root instanceof JsonParser.JsonNode.JsonObjectNode objectNode)) {
+       throw new JsonMappingException("A JSON object is expected but " + describe(root) + " was supplied at $");
+--- /dev/null
++++ b/src/main/java/com/lemadane/jax/json/internal/JsonDirectReader.java
+@@ -0,0 +1,123 @@
++package com.lemadane.jax.json.internal;
++
++import java.lang.reflect.Array;
++import java.lang.reflect.InvocationTargetException;
++import java.lang.reflect.Type;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Optional;
++
++import com.lemadane.jax.convert.TypeConverter;
++import com.lemadane.jax.exceptions.ExcessDataException;
++import com.lemadane.jax.exceptions.JsonMappingException;
++import com.lemadane.jax.naming.DataNameCodec;
++
++/** Direct binding for no-argument POJOs, with the full mapper as a fallback. */
++final class JsonDirectReader {
++   JsonDirectReader() {
++  }
++
++  static <T> T read(String json, Class<T> type, boolean strict) {
++    // Preserve the original contract: malformed input never invokes user code.
++    JsonParser.validate(json);
++    JsonParser parser = new JsonParser(json);
++    parser.skipWhitespace();
++    if (parser.json.charAt(parser.pos) != '{') {
++      var node = parser.parseValue("$", 0);
++      throw new JsonMappingException("A JSON object is expected but " + JsonObjectReader.describe(node) + " was supplied at $");
++    }
++    return readObject(parser, type, "$", 1, strict);
++  }
++
++   static <T> T readObject(JsonParser parser, Class<T> type, String path, int depth, boolean strict) {
++    parser.pos++; // Opening brace; syntax has already been validated.
++    T instance = JsonObjectReader.createInstance(type);
++    parser.skipWhitespace();
++    if (parser.json.charAt(parser.pos) == '}') {
++      parser.pos++;
++      return instance;
++    }
++    while (true) {
++      parser.skipWhitespace();
++      String name = parser.parseStringValue(path);
++      String propertyPath = path + "." + name;
++      parser.skipWhitespace();
++      parser.pos++; // Colon.
++      var setter = JsonObjectReader.findSetter(type, name, propertyPath);
++      if (setter == null) {
++        String encoded = DataNameCodec.encode(name);
++        if (!encoded.equals(name)) {
++          setter = JsonObjectReader.findSetter(type, encoded, propertyPath);
++        }
++      }
++      if (setter == null) {
++        if (strict) {
++          throw new ExcessDataException("No setter for JSON property \"" + name + "\" on " + type.getName() + " at " + propertyPath);
++        }
++        parser.parseValue(propertyPath, depth);
++      } else {
++        Object value = readValue(parser, setter.getParameterTypes()[0], setter.getGenericParameterTypes()[0],
++            propertyPath, depth, strict);
++        try {
++          setter.invoke(instance, value);
++        } catch (InvocationTargetException e) {
++          Throwable cause = e.getCause() != null ? e.getCause() : e;
++          throw new JsonMappingException("Setter for property \"" + name + "\" failed at " + propertyPath, cause);
++        } catch (ReflectiveOperationException | IllegalArgumentException e) {
++          throw new JsonMappingException("Failed to set property \"" + name + "\" at " + propertyPath, e);
++        }
++      }
++      parser.skipWhitespace();
++      if (parser.json.charAt(parser.pos++) == '}') {
++        return instance;
++      }
++    }
++  }
++
++   static Object readValue(JsonParser parser, Class<?> type, Type genericType, String path, int depth, boolean strict) {
++    parser.skipWhitespace();
++    char token = parser.json.charAt(parser.pos);
++    if (token != 'n' && Optional.class.isAssignableFrom(type)) {
++      Type inner = JsonObjectReader.getGenericTypeArgument(genericType);
++      return Optional.ofNullable(readValue(parser, JsonObjectReader.rawType(inner), inner, path, depth, strict));
++    }
++    if (token == '{' && JsonObjectReader.hasOnlyDefaultConstructor(type)
++        && type != Object.class && !List.class.isAssignableFrom(type) && !type.isArray()) {
++      return readObject(parser, type, path, depth + 1, strict);
++    }
++    if (token == '[' && (List.class.isAssignableFrom(type) || type.isArray())) {
++      Type element = type.isArray() ? type.getComponentType() : JsonObjectReader.getGenericTypeArgument(genericType);
++      Class<?> elementType = JsonObjectReader.rawType(element);
++      List<Object> values = new ArrayList<>();
++      parser.pos++;
++      parser.skipWhitespace();
++      if (parser.json.charAt(parser.pos) == ']') {
++        parser.pos++;
++      } else {
++        int index = 0;
++        while (true) {
++          values.add(readValue(parser, elementType, element, path + "[" + index++ + "]", depth + 1, strict));
++          parser.skipWhitespace();
++          if (parser.json.charAt(parser.pos++) == ']') {
++            break;
++          }
++        }
++      }
++      if (!type.isArray()) {
++        return Collections.unmodifiableList(values);
++      }
++      Object array = Array.newInstance(elementType, values.size());
++      for (int i = 0; i < values.size(); i++) {
++        Array.set(array, i, values.get(i));
++      }
++      return array;
++    }
++    if (token == '"' && !List.class.isAssignableFrom(type) && !type.isArray()) {
++      return TypeConverter.convert(type, parser.parseStringValue(path), path);
++    }
++    // Constructor selection, scalar conversion and unusual types retain the
++    // existing semantics. Only this value needs a tree on the fallback path.
++    return JsonObjectReader.readValue(type, genericType, parser.parseValue(path, depth), path, strict);
++  }
++}
+--- /dev/null
++++ b/src/comparison/java/com/lemadane/jax/json/internal/JsonTreeReaderBaseline.java
+@@ -0,0 +1,11 @@
++package com.lemadane.jax.json.internal;
++
++/** Comparison-only access to the original complete-tree POJO reader. */
++public final class JsonTreeReaderBaseline {
++   JsonTreeReaderBaseline() {
++  }
++
++  public static <T> T read(String json, Class<T> type) {
++    return JsonObjectReader.readTree(json, type, true);
++  }
++}
+--- a/src/comparison/java/com/lemadane/jax/comparison/ComparisonWorkload.java
++++ b/src/comparison/java/com/lemadane/jax/comparison/ComparisonWorkload.java
+@@ -60,6 +60,17 @@
+     return Jax.toObject(com.lemadane.jax.xml.internal.XmlTreeWriterBaseline.stringify(Jax.toObject(xml, xmlType)), xmlType);
+   }
+ 
++  public Object jaxJsonTreePipelineRoundTrip() {
++    Object value = com.lemadane.jax.json.internal.JsonTreeReaderBaseline.read(json, jsonType);
++    String output = com.lemadane.jax.json.internal.JsonTreeWriterBaseline.stringify(value);
++    return com.lemadane.jax.json.internal.JsonTreeReaderBaseline.read(output, jsonType);
++  }
++
++  public Object jaxJsonTreeReaderRoundTrip() {
++    Object value = com.lemadane.jax.json.internal.JsonTreeReaderBaseline.read(json, jsonType);
++    return com.lemadane.jax.json.internal.JsonTreeReaderBaseline.read(Jax.toJson(value), jsonType);
++  }
++
+   public Object jacksonJsonRoundTrip() throws Exception {
+     return jacksonJson.readValue(jacksonJson.writeValueAsString(jacksonJson.readValue(json, jsonType)), jsonType);
+   }
+--- a/src/comparison/java/com/lemadane/jax/comparison/LibraryComparisonBenchmark.java
++++ b/src/comparison/java/com/lemadane/jax/comparison/LibraryComparisonBenchmark.java
+@@ -47,6 +47,16 @@
+   }
+ 
+   @Benchmark
++  public Object jaxJsonTreePipelineRoundTrip() {
++    return workload.jaxJsonTreePipelineRoundTrip();
++  }
++
++  @Benchmark
++  public Object jaxJsonTreeReaderRoundTrip() {
++    return workload.jaxJsonTreeReaderRoundTrip();
++  }
++
++  @Benchmark
+   public Object jacksonJsonRoundTrip() throws Exception {
+     return workload.jacksonJsonRoundTrip();
+   }
+--- a/src/comparisonTest/java/com/lemadane/jax/comparison/LibraryComparisonTest.java
++++ b/src/comparisonTest/java/com/lemadane/jax/comparison/LibraryComparisonTest.java
+@@ -27,7 +27,7 @@
+   }
+ 
+   @ParameterizedTest(name = "Full organization JSON: {0}")
+-  @ValueSource(strings = {"JAX", "JAX tree writer", "Jackson", "Gson"})
++  @ValueSource(strings = {"JAX", "JAX tree writer", "JAX tree pipeline", "JAX tree reader", "Jackson", "Gson"})
+   void preservesCompleteJsonAndExactlyTwoDefaults(String library) throws Exception {
+     Object restored;
+     String output;
+@@ -40,6 +40,15 @@
+         restored = workload.jaxJsonTreeWriterRoundTrip();
+         output = com.lemadane.jax.json.internal.JsonTreeWriterBaseline.stringify(restored);
+         assertThat(output).isEqualTo(Jax.toJson(restored));
++      }
++      case "JAX tree pipeline" -> {
++        restored = workload.jaxJsonTreePipelineRoundTrip();
++        output = com.lemadane.jax.json.internal.JsonTreeWriterBaseline.stringify(restored);
++        assertThat(output).isEqualTo(Jax.toJson(restored));
++      }
++      case "JAX tree reader" -> {
++        restored = workload.jaxJsonTreeReaderRoundTrip();
++        output = Jax.toJson(restored);
+       }
+       case "Jackson" -> {
+         restored = workload.jacksonJsonRoundTrip();
+--- /dev/null
++++ b/src/test/java/com/lemadane/jax/json/internal/JsonDirectReaderTest.java
+@@ -0,0 +1,130 @@
++package com.lemadane.jax.json.internal;
++
++import java.util.List;
++import java.util.Optional;
++
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import com.lemadane.jax.Jax;
++import com.lemadane.jax.JsonProperty;
++
++import static org.assertj.core.api.Assertions.*;
++
++class JsonDirectReaderTest {
++  public static class Child {
++    public String log$colon$Name;
++    @JsonProperty public void setLog$colon$Name(String value) {
++      log$colon$Name = value;
++    }
++  }
++
++  public static class Constructed {
++    public final int value;
++    public Constructed(int value) {
++      this.value = value;
++    }
++  }
++
++  public static class Envelope {
++    public int count;
++    public List<Child> children;
++    public int[] numbers;
++    public Optional<List<Child>> optional;
++    public Constructed constructed;
++    @JsonProperty public void setCount(int value) {
++      count = value;
++    }
++    @JsonProperty public void setChildren(List<Child> value) {
++      children = value;
++    }
++    @JsonProperty public void setNumbers(int[] value) {
++      numbers = value;
++    }
++    @JsonProperty public void setOptional(Optional<List<Child>> value) {
++      optional = value;
++    }
++    @JsonProperty public void setConstructed(Constructed value) {
++      constructed = value;
++    }
++  }
++
++  public static class SideEffects {
++    static int constructions;
++    static int writes;
++    public SideEffects() {
++      constructions++;
++    }
++    @JsonProperty public void setCount(int value) {
++      writes++;
++    }
++  }
++
++  public static class Throwing {
++    @JsonProperty public void setCount(int value) {
++      throw new IllegalStateException("setter failed");
++    }
++  }
++
++  @Test
++  void matchesTreeBindingForNestedPojosGenericsArraysAndConstructorFallback() {
++    String input = """
++        {"count":3,"children":[{"log:Name":"first"},null,{}],"numbers":[1,2,3],
++         "optional":[{"log:Name":"optional"}],"constructed":{"value":7}}
++        """;
++    Envelope actual = Jax.toObject(input, Envelope.class);
++    Envelope expected = JsonObjectReader.readTree(input, Envelope.class, true);
++    assertThat(Jax.toJson(actual)).isEqualTo(Jax.toJson(expected));
++    assertThat(actual.children.get(0)).isInstanceOf(Child.class);
++    assertThat(actual.children.get(0).log$colon$Name).isEqualTo("first");
++    assertThat(actual.constructed.value).isEqualTo(7);
++    assertThat(actual.numbers).containsExactly(1, 2, 3);
++    assertThatThrownBy(() -> actual.children.clear()).isInstanceOf(UnsupportedOperationException.class);
++  }
++
++  @ParameterizedTest
++  @ValueSource(strings = {"{}", "{\"numbers\":[],\"children\":[],\"optional\":null}",
++      "{\"numbers\":null,\"children\":null,\"optional\":[]}",
++      "{\"unknown\":{\"nested\":[1,null,true]},\"count\":2}"})
++  void preservesPartialDefaultsAndUnknownPropertySkipping(String input) {
++    assertThat(Jax.toJson(JsonObjectReader.toObject(input, Envelope.class, false)))
++        .isEqualTo(Jax.toJson(JsonObjectReader.readTree(input, Envelope.class, false)));
++  }
++
++  @ParameterizedTest
++  @ValueSource(strings = {"", "{", "{\"count\":", "{\"count\":1,}", "{\"count\":1} trailing",
++      "{\"count\":1,\"count\":2}", "{\"children\":[{\"log:Name\":\"a\",\"log:Name\":\"b\"}]}",
++      "{\"count\":1e10001}", "{\"count\":1e}", "{\"count\":1.}", "{\"count\":01}",
++      "{\"count\":tru}", "{\"count\":nul}", "{\"count\":\"\\x\"}", "{\"children\":[}",
++      "{\"unknown\":1}", "{\"count\":null}", "{\"numbers\":true}", "{\"children\":[3]}",
++      "{\"constructed\":{\"wrong\":1}}", "[]", "null", "true", "42", "\"text\""})
++  void preservesSyntaxAndMappingErrors(String input) {
++    Throwable expected = catchThrowable(() -> JsonObjectReader.readTree(input, Envelope.class, true));
++    assertThat(expected).isNotNull();
++    assertThatThrownBy(() -> JsonObjectReader.toObject(input, Envelope.class, true))
++        .isExactlyInstanceOf(expected.getClass()).hasMessage(expected.getMessage());
++  }
++
++  @Test
++  void validatesEntireDocumentBeforeInvokingUserCode() {
++    SideEffects.constructions = 0;
++    SideEffects.writes = 0;
++    assertThatThrownBy(() -> Jax.toObject("{\"count\":1} trailing", SideEffects.class));
++    assertThat(SideEffects.constructions).isZero();
++    assertThat(SideEffects.writes).isZero();
++    Jax.toObject("{\"count\":1}", SideEffects.class);
++    assertThat(SideEffects.constructions).isEqualTo(1);
++    assertThat(SideEffects.writes).isEqualTo(1);
++  }
++
++  @Test
++  void preservesSetterFailureCausesAndAccessErrors() {
++    for (Class<?> type : List.of(Throwing.class)) {
++      Throwable expected = catchThrowable(() -> JsonObjectReader.readTree("{\"count\":1}", type, true));
++      assertThat(expected).isNotNull();
++      assertThatThrownBy(() -> JsonObjectReader.toObject("{\"count\":1}", type, true))
++          .isExactlyInstanceOf(expected.getClass()).hasMessage(expected.getMessage());
++    }
++  }
++}
+--- /dev/null
++++ b/src/test/java/com/lemadane/jax/json/internal/JsonValidationPassTest.java
+@@ -0,0 +1,33 @@
++package com.lemadane.jax.json.internal;
++
++import java.util.List;
++
++import org.junit.jupiter.api.Test;
++
++import static org.assertj.core.api.Assertions.*;
++
++class JsonValidationPassTest {
++  @Test
++  void acceptsTheSameEscapesAndNumericBoundsAsTheTreeParser() {
++    List<String> inputs = List.of("null", "true", "false", "0", "-0", "-1.25e+2", "1e10000", "1e-10000",
++        "[{},[],null,\"plain😀\"]", "\"\\\"\\\\\\/\\b\\f\\n\\r\\t\"",
++        "\"\\u0041\\uD83D\\uDE00\\uD800\\u0042\"", "1e" + "0".repeat(100) + "1",
++        "{\"escaped\\u003Akey\":\"value\"}");
++    for (String input : inputs) {
++      JsonParser.parse(input);
++      assertThatCode(() -> JsonParser.validate(input)).doesNotThrowAnyException();
++    }
++  }
++
++  @Test
++  void rejectsTheSameMalformedStringsAndLimitsAsTheTreeParser() {
++    List<String> inputs = List.of("\"unterminated", "\"ends in \\", "\"\\x\"", "\"raw\nnewline\"",
++        "\"\\u12\"", "\"\\uZZZZ\"", "\"\\uD800\\uZZZZ\"", "[\"ok\",{\"x\":\"\\x\"}]",
++        "1".repeat(1025), "1e10001", "1e-10001", "1e999999999999", "[".repeat(257) + "0" + "]".repeat(257));
++    for (String input : inputs) {
++      Throwable expected = catchThrowable(() -> JsonParser.parse(input));
++      assertThat(expected).isNotNull();
++      assertThatThrownBy(() -> JsonParser.validate(input)).isExactlyInstanceOf(expected.getClass()).hasMessage(expected.getMessage());
++    }
++  }
++}

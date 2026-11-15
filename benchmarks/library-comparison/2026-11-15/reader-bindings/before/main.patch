@@ -1,0 +1,354 @@
+--- a/src/main/java/com/lemadane/jax/cli/JavaSourceGenerator.java
++++ b/src/main/java/com/lemadane/jax/cli/JavaSourceGenerator.java
+@@ -42,7 +42,7 @@
+       "abstract", "assert", "boolean", "break", "byte", "case", "catch", "char", "class", "const",
+       "continue", "default", "do", "double", "else", "enum", "extends", "final", "finally", "float",
+       "for", "goto", "if", "implements", "import", "instanceof", "int", "interface", "long", "native",
+-      "new", "package", "private", "protected", "public", "return", "short", "static", "strictfp",
++      "new", "package", "", "protected", "public", "return", "short", "static", "strictfp",
+       "super", "switch", "synchronized", "this", "throw", "throws", "transient", "try", "void",
+       "volatile", "while", "true", "false", "null", "record", "sealed", "permits", "var", "yield"
+   );
+--- a/src/main/java/com/lemadane/jax/json/internal/JsonObjectReader.java
++++ b/src/main/java/com/lemadane/jax/json/internal/JsonObjectReader.java
+@@ -31,19 +31,10 @@
+   JsonObjectReader() {
+   }
+ 
+-  static final ClassValue<ConstructorBindings> CONSTRUCTORS = new ClassValue<>() {
++   static final ClassValue<List<Constructor<?>>> CONSTRUCTORS = new ClassValue<>() {
+     @Override
+-    protected ConstructorBindings computeValue(Class<?> type) {
+-      Constructor<?> defaultConstructor = null;
+-      List<Constructor<?>> parameterized = new ArrayList<>();
+-      for (Constructor<?> constructor : type.getDeclaredConstructors()) {
+-        if (constructor.getParameterCount() == 0) {
+-          defaultConstructor = constructor;
+-        } else {
+-          parameterized.add(constructor);
+-        }
+-      }
+-      return new ConstructorBindings(defaultConstructor, List.copyOf(parameterized));
++    protected List<Constructor<?>> computeValue(Class<?> type) {
++      return List.of(type.getDeclaredConstructors());
+     }
+   };
+ 
+@@ -77,11 +68,11 @@
+       }
+       String propertyName = entry.getKey();
+       String propertyPath = path + "." + entry.getKey();
+-      SetterBinding setter = findSetterBinding(targetType, propertyName, propertyPath);
++      Method setter = findSetter(targetType, propertyName, propertyPath);
+       if (setter == null) {
+         String encodedName = DataNameCodec.encode(propertyName);
+         if (!encodedName.equals(propertyName)) {
+-          setter = findSetterBinding(targetType, encodedName, propertyPath);
++          setter = findSetter(targetType, encodedName, propertyPath);
+         }
+       }
+       if (setter == null) {
+@@ -93,9 +84,11 @@
+         );
+       }
+ 
+-      Object value = readValue(setter.parameterType(), setter.genericType(), entry.getValue(), propertyPath, strict);
++      Class<?> parameterType = setter.getParameterTypes()[0];
++      Type genericType = setter.getGenericParameterTypes()[0];
++      Object value = readValue(parameterType, genericType, entry.getValue(), propertyPath, strict);
+       try {
+-        setter.method().invoke(instance, value);
++        setter.invoke(instance, value);
+       } catch (InvocationTargetException e) {
+         Throwable cause = e.getCause() != null ? e.getCause() : e;
+         throw new JsonMappingException("Setter for property \"" + entry.getKey() + "\" failed at " + propertyPath, cause);
+@@ -112,14 +105,13 @@
+       String path,
+       boolean strict
+   ) {
+-    ConstructorBindings bindings = CONSTRUCTORS.get(targetType);
+-    if (bindings.parameterized().isEmpty()) {
+-      return new ConstructorResult<>(createInstance(targetType), Set.of());
+-    }
+     List<Constructor<?>> matchingConstructors = new ArrayList<>();
+     List<Set<String>> matchingPropertySets = new ArrayList<>();
+     boolean missingParameterNames = false;
+-    for (Constructor<?> constructor : bindings.parameterized()) {
++    for (Constructor<?> constructor : CONSTRUCTORS.get(targetType)) {
++      if (constructor.getParameterCount() == 0) {
++        continue;
++      }
+       Set<String> consumedProperties = new LinkedHashSet<>();
+       boolean matches = true;
+       for (var parameter : constructor.getParameters()) {
+@@ -205,10 +197,11 @@
+   }
+ 
+   @SuppressWarnings("unchecked")
+-  static <T> Constructor<T> defaultConstructor(Class<T> type) throws NoSuchMethodException {
+-    Constructor<?> constructor = CONSTRUCTORS.get(type).defaultConstructor();
+-    if (constructor != null) {
+-      return (Constructor<T>) constructor;
++   static <T> Constructor<T> defaultConstructor(Class<T> type) throws NoSuchMethodException {
++    for (Constructor<?> constructor : CONSTRUCTORS.get(type)) {
++      if (constructor.getParameterCount() == 0) {
++        return (Constructor<T>) constructor;
++      }
+     }
+     throw new NoSuchMethodException(type.getName());
+   }
+@@ -236,15 +229,14 @@
+     }
+   }
+ 
+-  static final ClassValue<Map<String, List<SetterBinding>>> SETTERS = new ClassValue<>() {
++   static final ClassValue<Map<String, List<Method>>> SETTERS = new ClassValue<>() {
+     @Override
+-    protected Map<String, List<SetterBinding>> computeValue(Class<?> type) {
+-      Map<String, List<SetterBinding>> methods = new HashMap<>();
++    protected Map<String, List<Method>> computeValue(Class<?> type) {
++      Map<String, List<Method>> methods = new HashMap<>();
+       for (Method method : type.getMethods()) {
+         if (!Modifier.isStatic(method.getModifiers()) && !method.isBridge() && !method.isSynthetic()
+             && method.getParameterCount() == 1 && method.isAnnotationPresent(JsonProperty.class)) {
+-          methods.computeIfAbsent(method.getName(), key -> new ArrayList<>())
+-              .add(new SetterBinding(method));
++          methods.computeIfAbsent(method.getName(), key -> new ArrayList<>()).add(method);
+         }
+       }
+       methods.replaceAll((name, matches) -> List.copyOf(matches));
+@@ -253,13 +245,8 @@
+   };
+ 
+   static Method findSetter(Class<?> targetType, String propertyName, String path) {
+-    SetterBinding binding = findSetterBinding(targetType, propertyName, path);
+-    return binding == null ? null : binding.method();
+-  }
+-
+-  static SetterBinding findSetterBinding(Class<?> targetType, String propertyName, String path) {
+-    Map<String, List<SetterBinding>> methods = SETTERS.get(targetType);
+-    List<SetterBinding> matches = methods.get(propertyName);
++    Map<String, List<Method>> methods = SETTERS.get(targetType);
++    List<Method> matches = methods.get(propertyName);
+     if (matches == null && !propertyName.isEmpty()) {
+       matches = methods.get("set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1));
+     }
+@@ -415,35 +402,4 @@
+   }
+ 
+   record ConstructorResult<T>(T instance, Set<String> consumedProperties) {}
+-
+-  record ConstructorBindings(Constructor<?> defaultConstructor, List<Constructor<?>> parameterized) {}
+-
+-  static final class SetterBinding {
+-    private final Method method;
+-    private final Class<?> parameterType;
+-    private volatile Type genericType;
+-
+-    SetterBinding(Method method) {
+-      this.method = method;
+-      parameterType = method.getParameterTypes()[0];
+-    }
+-
+-    Method method() {
+-      return method;
+-    }
+-
+-    Class<?> parameterType() {
+-      return parameterType;
+-    }
+-
+-    Type genericType() {
+-      Type cached = genericType;
+-      if (cached == null) {
+-        // Resolve generic signatures only when selected, preserving failures for unused setters.
+-        cached = method.getGenericParameterTypes()[0];
+-        genericType = cached;
+-      }
+-      return cached;
+-    }
+-  }
+ }
+--- a/src/main/java/com/lemadane/jax/xml/internal/XmlObjectReader.java
++++ b/src/main/java/com/lemadane/jax/xml/internal/XmlObjectReader.java
+@@ -47,13 +47,6 @@
+     }
+   };
+ 
+-  static final ClassValue<Boolean> DEFAULT_ONLY = new ClassValue<>() {
+-    @Override
+-    protected Boolean computeValue(Class<?> type) {
+-      return CONSTRUCTORS.get(type).stream().allMatch(constructor -> constructor.getParameterCount() == 0);
+-    }
+-  };
+-
+   public static <T> T toObject(String xml, Class<T> targetType) {
+     return toObject(xml, targetType, true);
+   }
+@@ -156,17 +149,16 @@
+           || !appliedSetters.add(propertyName)) {
+         continue;
+       }
+-      SetterBinding binding = findSetterBinding(targetType, propertyName, path);
+-      if (binding == null) {
+-        continue;
+-      }
+-      Method setter = binding.method();
++      Method setter = findSetter(targetType, propertyName, path);
++      if (setter == null) {
++        continue;
++      }
+       List<XmlElement> matches = matchingElements(childElements, propertyName);
+       if (matches.isEmpty()) {
+         continue;
+       }
+-      Class<?> valueType = binding.parameterType();
+-      Type genericType = binding.genericType();
++      Class<?> valueType = setter.getParameterTypes()[0];
++      Type genericType = setter.getGenericParameterTypes()[0];
+       String propertyPath = path + "/" + propertyName;
+       Object value;
+       if (valueType.isArray()) {
+@@ -202,9 +194,6 @@
+       String path,
+       boolean strict
+   ) {
+-    if (DEFAULT_ONLY.get(targetType)) {
+-      return new ConstructorResult<>(createInstance(targetType, path), Set.of(), Set.of());
+-    }
+     List<Constructor<?>> matchingConstructors = new ArrayList<>();
+     List<Set<String>> matchingPropertySets = new ArrayList<>();
+     boolean missingParameterNames = false;
+@@ -450,10 +439,10 @@
+     return null;
+   }
+ 
+-  static final ClassValue<Map<String, List<SetterBinding>>> SETTERS = new ClassValue<>() {
++   static final ClassValue<Map<String, List<Method>>> SETTERS = new ClassValue<>() {
+     @Override
+-    protected Map<String, List<SetterBinding>> computeValue(Class<?> type) {
+-      Map<String, List<SetterBinding>> methods = new HashMap<>();
++    protected Map<String, List<Method>> computeValue(Class<?> type) {
++      Map<String, List<Method>> methods = new HashMap<>();
+       for (Method method : type.getMethods()) {
+         if (Modifier.isStatic(method.getModifiers()) || method.isBridge() || method.isSynthetic()
+             || method.getParameterCount() != 1 || !method.isAnnotationPresent(JsonProperty.class)) {
+@@ -463,11 +452,10 @@
+         if (name.startsWith("set") && name.length() > 3 && Character.isUpperCase(name.charAt(3))) {
+           name = Character.toLowerCase(name.charAt(3)) + name.substring(4);
+         }
+-        SetterBinding binding = new SetterBinding(method);
+-        methods.computeIfAbsent(name, key -> new ArrayList<>()).add(binding);
++        methods.computeIfAbsent(name, key -> new ArrayList<>()).add(method);
+         String decoded = DataNameCodec.decode(name);
+         if (!decoded.equals(name)) {
+-          methods.computeIfAbsent(decoded, key -> new ArrayList<>()).add(binding);
++          methods.computeIfAbsent(decoded, key -> new ArrayList<>()).add(method);
+         }
+       }
+       methods.replaceAll((name, matches) -> List.copyOf(matches));
+@@ -476,12 +464,7 @@
+   };
+ 
+   static Method findSetter(Class<?> type, String decodedName, String path) {
+-    SetterBinding binding = findSetterBinding(type, decodedName, path);
+-    return binding == null ? null : binding.method();
+-  }
+-
+-  static SetterBinding findSetterBinding(Class<?> type, String decodedName, String path) {
+-    List<SetterBinding> matches = SETTERS.get(type).get(decodedName);
++    List<Method> matches = SETTERS.get(type).get(decodedName);
+     if (matches == null) {
+       return null;
+     }
+@@ -688,33 +671,4 @@
+   }
+ 
+   record ConstructorResult<T>(T instance, Set<String> consumedProperties, Set<String> consumedAttributes) {}
+-
+-  static final class SetterBinding {
+-    private final Method method;
+-    private final Class<?> parameterType;
+-    private volatile Type genericType;
+-
+-    SetterBinding(Method method) {
+-      this.method = method;
+-      parameterType = method.getParameterTypes()[0];
+-    }
+-
+-    Method method() {
+-      return method;
+-    }
+-
+-    Class<?> parameterType() {
+-      return parameterType;
+-    }
+-
+-    Type genericType() {
+-      Type cached = genericType;
+-      if (cached == null) {
+-        // Resolve generic signatures only when selected, preserving failures for unused setters.
+-        cached = method.getGenericParameterTypes()[0];
+-        genericType = cached;
+-      }
+-      return cached;
+-    }
+-  }
+ }
+--- a/src/main/java/com/lemadane/jax/xml/internal/XmlObjectWriter.java
++++ b/src/main/java/com/lemadane/jax/xml/internal/XmlObjectWriter.java
+@@ -422,35 +422,32 @@
+   }
+ 
+   static String escapeXml(String input, boolean attribute) {
+-    StringBuilder escaped = null;
++    StringBuilder escaped = new StringBuilder(input.length());
+     for (int offset = 0; offset < input.length();) {
+       int codePoint = input.codePointAt(offset);
+       if (!isValidXmlCharacter(codePoint)) {
+         throw new XmlMappingException("XML 1.0 does not permit character U+"
+             + String.format("%04X", codePoint));
+       }
+-      String replacement = switch (codePoint) {
+-        case '&' -> "&amp;";
+-        case '<' -> "&lt;";
+-        case '>' -> "&gt;";
+-        case '"' -> attribute ? "&quot;" : null;
+-        case '\t' -> attribute ? "&#x9;" : null;
+-        case '\n' -> attribute ? "&#xA;" : null;
+-        case '\r' -> "&#xD;";
+-        default -> null;
+-      };
+-      if (replacement != null) {
+-        if (escaped == null) {
+-          escaped = new StringBuilder(input.length());
+-          escaped.append(input, 0, offset);
+-        }
+-        escaped.append(replacement);
+-      } else if (escaped != null) {
+-        escaped.appendCodePoint(codePoint);
+-      }
+       offset += Character.charCount(codePoint);
+-    }
+-    return escaped == null ? input : escaped.toString();
++      switch (codePoint) {
++        case '&' -> escaped.append("&amp;");
++        case '<' -> escaped.append("&lt;");
++        case '>' -> escaped.append("&gt;");
++        case '"' -> {
++          if (attribute) {
++            escaped.append("&quot;");
++          } else {
++            escaped.append('"');
++          }
++        }
++        case '\t' -> escaped.append(attribute ? "&#x9;" : "\t");
++        case '\n' -> escaped.append(attribute ? "&#xA;" : "\n");
++        case '\r' -> escaped.append("&#xD;");
++        default -> escaped.appendCodePoint(codePoint);
++      }
++    }
++    return escaped.toString();
+   }
+ 
+   static boolean isValidXmlCharacter(int codePoint) {

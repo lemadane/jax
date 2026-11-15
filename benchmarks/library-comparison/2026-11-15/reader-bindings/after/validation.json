@@ -1,0 +1,41 @@
+{
+  "test": {
+    "tests": 396,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "comparisonTest": {
+    "tests": 7,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "coverage": {
+    "INSTRUCTION": {
+      "missed": 264,
+      "covered": 13039
+    },
+    "BRANCH": {
+      "missed": 157,
+      "covered": 1946
+    },
+    "LINE": {
+      "missed": 73,
+      "covered": 2609
+    },
+    "COMPLEXITY": {
+      "missed": 170,
+      "covered": 1215
+    },
+    "METHOD": {
+      "missed": 21,
+      "covered": 298
+    },
+    "CLASS": {
+      "missed": 0,
+      "covered": 61
+    }
+  },
+  "build": "build compareLibraries: BUILD SUCCESSFUL"
+}

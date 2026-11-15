@@ -1,0 +1,119 @@
+{
+  "jdk.ExecutionSample": {
+    "events": 243,
+    "totalWeight": 243,
+    "stages": {
+      "XML mapping": 133,
+      "XML parsing and AST construction": 101,
+      "XML factory discovery": 7,
+      "Other": 2
+    },
+    "stagePercent": {
+      "XML mapping": 54.73,
+      "XML parsing and AST construction": 41.56,
+      "XML factory discovery": 2.88,
+      "Other": 0.82
+    },
+    "topFrames": {
+      "com.lemadane.jax.naming.DataNameCodec.decode": 18,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.readObject": 17,
+      "java.util.HashMap.getNode": 15,
+      "com.ctc.wstx.util.SymbolTable.findSymbol": 15,
+      "com.ctc.wstx.sr.StreamScanner.parseLocalName": 13,
+      "com.lemadane.jax.xml.internal.XmlRecordReader.parseXmlDocument": 9,
+      "java.util.Collections$UnmodifiableCollection$1.next": 8,
+      "java.lang.StringLatin1.hashCode": 8,
+      "java.util.ImmutableCollections$MapN.probe": 8,
+      "java.util.HashMap.putVal": 7,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.readValue": 7,
+      "jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke": 7,
+      "com.ctc.wstx.sr.BasicStreamReader.readEndElem": 6,
+      "com.ctc.wstx.util.SymbolTable$Bucket.find": 6,
+      "com.ctc.wstx.sr.BasicStreamReader.nextFromTree": 5
+    },
+    "nearestJaxFrames": {
+      "com.lemadane.jax.xml.internal.XmlRecordReader.parseXmlDocument": 97,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.readObject": 35,
+      "com.lemadane.jax.naming.DataNameCodec.decode": 18,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.xmlAttributeName": 17,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.findSetter": 13,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.matchingElements": 10,
+      "com.lemadane.jax.xml.internal.XmlElement.addAttribute": 9,
+      "com.lemadane.jax.xml.internal.XmlElement.attribute": 7,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.readValue": 7,
+      "com.lemadane.jax.xml.internal.XmlElement.hasAttribute": 6,
+      "com.lemadane.jax.convert.TypeConverter.convert": 5,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.createInstance": 3,
+      "com.lemadane.jax.xml.internal.XmlElement.addChild": 2,
+      "none": 2,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.isPojo": 2
+    },
+    "allocatedTypes": {}
+  },
+  "jdk.ObjectAllocationSample": {
+    "events": 2454,
+    "totalWeight": 5509017680,
+    "stages": {
+      "XML writing": 2109919912,
+      "XML mapping": 1299899456,
+      "XML parsing and AST construction": 1106900104,
+      "XML factory discovery": 824605784,
+      "Other": 167692424
+    },
+    "stagePercent": {
+      "XML writing": 38.3,
+      "XML mapping": 23.6,
+      "XML parsing and AST construction": 20.09,
+      "XML factory discovery": 14.97,
+      "Other": 3.04
+    },
+    "topFrames": {
+      "java.util.Arrays.copyOf": 1326217448,
+      "jdk.internal.misc.Unsafe.allocateUninitializedArray": 834062248,
+      "java.util.zip.InflaterInputStream.<init>": 518307536,
+      "com.lemadane.jax.xml.internal.XmlElement.<init>": 443314792,
+      "java.lang.StringUTF16.compress": 283962312,
+      "java.io.BufferedReader.<init>": 270428352,
+      "java.util.Arrays.copyOfRange": 220461680,
+      "java.util.HashSet.<init>": 190999928,
+      "java.util.LinkedHashMap$LinkedKeySet.iterator": 163612864,
+      "com.ctc.wstx.util.TextBuffer.contentsAsString": 123505184,
+      "java.util.HashMap.newNode": 112363368,
+      "java.util.LinkedHashMap.keySet": 109226576,
+      "java.util.ArrayList.grow": 105983216,
+      "java.lang.AbstractStringBuilder.<init>": 84883744,
+      "com.lemadane.jax.xml.internal.XmlObjectWriter.readAttributes": 82585672
+    },
+    "nearestJaxFrames": {
+      "com.lemadane.jax.xml.internal.XmlObjectWriter.writeStart": 1654649184,
+      "com.lemadane.jax.xml.internal.XmlRecordReader.parseXmlDocument": 1274936864,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.readObject": 1159876848,
+      "com.lemadane.jax.xml.internal.XmlElement.<init>": 443314792,
+      "com.lemadane.jax.xml.internal.XmlObjectWriter.stringify": 128251688,
+      "com.lemadane.jax.naming.DataNameCodec.decode": 121459928,
+      "com.lemadane.jax.xml.internal.XmlObjectWriter.readAttributes": 103860120,
+      "com.lemadane.jax.xml.internal.XmlObjectWriter.escapeXml": 98617312,
+      "com.lemadane.jax.xml.internal.XmlElement.addChild": 96043240,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.matchingElements": 84150904,
+      "com.lemadane.jax.xml.internal.XmlDirectWriter.close": 64026504,
+      "com.lemadane.jax.xml.internal.XmlElement.addAttribute": 60567808,
+      "com.lemadane.jax.xml.internal.XmlRecordReader.qualifiedName": 54558472,
+      "none": 39440736,
+      "com.lemadane.jax.xml.internal.XmlObjectReader.readList": 31818352
+    },
+    "allocatedTypes": {
+      "[B": 3371027408,
+      "java/util/ArrayList": 381054328,
+      "[C": 270428352,
+      "java/util/LinkedHashMap": 211715120,
+      "java/lang/String": 208222248,
+      "java/util/HashMap": 190999928,
+      "java/util/LinkedHashMap$LinkedKeyIterator": 163612864,
+      "[Ljava/lang/Object;": 127134896,
+      "java/util/HashMap$Node": 112363368,
+      "java/util/LinkedHashMap$LinkedKeySet": 109226576,
+      "java/util/ImmutableCollections$ListItr": 80456672,
+      "[Ljava/util/HashMap$Node;": 47304328
+    }
+  }
+}

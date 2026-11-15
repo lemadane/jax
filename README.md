@@ -36,6 +36,7 @@ Generate Java records and POJOs from JSON or XML samples, then use them to read 
 - [Safeguards and errors](#safeguards-and-errors)
 - [Build and test](#build-and-test)
 - [Performance benchmarks](#performance-benchmarks)
+- [JAX vs. Jackson and Gson](#jax-vs-jackson-and-gson-complex-fixture-comparison)
 
 ## Generate Java classes from JSON or XML
 
@@ -727,7 +728,7 @@ The [CLI end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) gen
 
 ### What the API round-trip tests compare
 
-**Both complete fixtures passed their public-API round-trip tests.** The latest verified run passed all six dedicated cases below, plus the full suite of **362 tests** with **97.11% line coverage**.
+**Both complete fixtures passed their public-API round-trip tests.** The latest verified run passed all six dedicated cases below, plus the full suite of **396 tests** with **97.28% line coverage**.
 
 | Fixture | API/model style | Verified result |
 | --- | --- | --- |
@@ -1316,9 +1317,10 @@ The latest local Java 17 verification passed the full build, Checkstyle, and cov
 
 | Check | Result |
 | --- | --- |
-| Tests | 362 passed; no failures or skipped tests |
-| Line coverage | 97.11% (required: 97%) |
-| Branch coverage | 91.53% |
+| Core tests | 396 passed; no failures or skipped tests |
+| Library comparison tests | 7 passed: five library cases and two tree-writer controls |
+| Line coverage | 97.28% (required: 97%) |
+| Branch coverage | 92.53% |
 
 Generation tests compile every emitted file and verify that all generated types are top-level. They cover all three model styles, JSON and XML round trips, XML attributes and text, duplicate type names, protection of existing files, and the complex organization payload. The complete supply-chain XML is generated and round-trip tested with both POJO styles; XML records with attributes remain unsupported. Dedicated public-API tests also compile the saved JSON and XML models and compare both complete fixtures independently of CLI generation. These figures describe the verified revision; rerun the build after changes for current results.
 
@@ -1358,6 +1360,177 @@ JMH 1.36). `±` is the JMH 99.9% confidence error:
 These are illustrative, environment-specific measurements, not performance guarantees.
 The benchmark JVM had an instrumentation agent attached, and the wide confidence errors
 show that these results are noisy; use repeated runs on a controlled machine for comparisons.
+
+## JAX vs. Jackson and Gson: complex-fixture comparison
+
+See [Reader binding follow-up](#reader-binding-follow-up) for the latest implementation and its measurements. Earlier tables are retained as baselines.
+
+This is a **separate comparison** from the JAX-only benchmark above. It uses the same complete [organization JSON](src/test/resources/com/lemadane/jax/cli/complex-organization.json) and [supply-chain XML](src/test/resources/com/lemadane/jax/cli/supply-chain-manifest.xml) used by the API round-trip tests—not smaller substitute payloads.
+
+### Correctness results
+
+All **five library comparison cases passed**. Two additional cases now verify the retained tree-writer controls:
+
+| Fixture | JAX | Jackson | Gson |
+| --- | --- | --- | --- |
+| Complex organization JSON | Passed | Passed | Passed |
+| Supply-chain XML | Passed | Passed with Jackson XML | Not applicable: no native XML mapper |
+
+The [comparison tests](src/comparisonTest/java/com/lemadane/jax/comparison/LibraryComparisonTest.java) use the same saved POJO classes for every library: 23 JSON model files and 64 XML model files. They validate the full result after a read → write → read round trip.
+
+- **JSON:** every original value is preserved. All three libraries add the same two missing milestone properties as `null`. Numbers are compared by decimal value, so differences in numeric spelling do not count as data loss.
+- **XML:** every element and attribute is compared by namespace URI and local name, together with text values and repeated-element order. Prefix aliases, namespace-declaration placement, formatting, comments, and ordering between differently named child properties are not required to match. Jackson may choose different prefixes; this test checks XML meaning, not identical file text.
+- **Configuration:** Jackson uses field visibility to read the shared generated POJOs. A [comparison-only annotation adapter](src/comparison/java/com/lemadane/jax/comparison/JaxXmlIntrospector.java) translates JAX XML names, attributes, and text metadata for Jackson; namespace URIs come from the original fixture. XML null properties are omitted. Gson uses `serializeNulls()` so explicit JSON null values are preserved. The adapter does not convert payload data.
+
+Jackson XML is a [separate Jackson data-format module](https://github.com/FasterXML/jackson-dataformat-xml). [Gson provides JSON serialization and deserialization](https://github.com/google/gson); no XML conversion workaround is included in this comparison. Records, schema-free documents, source-generation speed, malformed-input handling, and other workloads are outside this comparison.
+
+### Measured performance
+
+Measured on **2026-11-15** using **JAX 0.2.0-SNAPSHOT**, **Jackson 2.20.1**, **Gson 2.13.2**, and **JMH 1.36**. These are the pinned versions tested, not a claim about every version of these libraries.
+
+One operation is **input string → typed POJO → output string → typed POJO**. JMH consumes the returned object. File loading, class loading, mapper construction, and correctness comparisons are outside the timed operation; mapper instances are reused.
+
+| Format | Library | Average time, µs/op ↓ | Allocated KiB/op ↓ |
+| --- | --- | ---: | ---: |
+| JSON | JAX | 354.29 ± 9.31 | 498.68 |
+| JSON | Jackson | 35.39 ± 1.38 | 15.34 |
+| JSON | Gson | 43.84 ± 5.63 | 31.16 |
+| XML | JAX | 2,643.75 ± 663.14 | 2,915.49 |
+| XML | Jackson XML | 462.11 ± 17.68 | 150.87 |
+
+`±` is JMH's **99.9% confidence error** across ten measured iterations (five per fork). Allocations are measured by JMH's GC profiler and are not retained heap size or peak memory usage.
+
+Jackson had the lowest measured time and allocation for both fixtures. For JSON, JAX took about **10.0×** Jackson’s time and **8.1×** Gson’s time. For XML, JAX took about **5.7×** Jackson XML’s time, with a wider confidence interval. These results identify performance and allocation improvements to pursue in JAX; they do not establish a universal ranking across workloads.
+
+**Run conditions:** Amazon Corretto **17.0.17+10-LTS**, Linux amd64, Intel Core i7-10710U, 12 available logical processors; one benchmark thread, two JVM forks, five 1-second warmup iterations and five 1-second measurement iterations per fork, with a fixed 512 MiB heap. Inputs are **3,773 UTF-8 bytes of JSON** and **13,948 UTF-8 bytes of XML**. Both XML implementations use **Woodstox 7.1.1** in this comparison; adding Jackson XML supplies that StAX provider on the comparison classpath.
+
+**Measurement limit:** A **Dynatrace monitoring agent was injected into all ten measured JVM forks**. Its actual arguments are recorded below. Instrumentation can affect both timing and allocation, so this is an instrumented local comparison. These are local, warmed-up measurements on two fixtures, not production latency guarantees. Do not compare the absolute times directly with the older JAX-only table, which used different fixtures and a different JDK.
+
+### Reproduce and inspect the results
+
+```bash
+# Correctness only: five library cases and two tree-writer controls
+./gradlew comparisonTest
+
+# Separate timing run; correctness checks must pass first
+./gradlew --no-daemon --max-workers=1 compareLibraries
+```
+
+Use JDK 17 to reproduce this run. The first run downloads the pinned comparison dependencies. Jackson, Gson, and JMH are confined to comparison configurations and are not runtime dependencies of the published JAX library. `build` also runs all seven correctness checks; performance measurements are opt-in and have no timing threshold in CI.
+
+Fresh timing results go to `build/results/library-comparison/`. The recorded run is saved permanently under [`benchmarks/library-comparison/2026-11-15/`](benchmarks/library-comparison/2026-11-15/):
+
+- [Raw JMH scores, confidence intervals, per-iteration data, and allocation metrics](benchmarks/library-comparison/2026-11-15/results.json)
+- [Environment, pinned versions, fixture sizes, and SHA-256 hashes](benchmarks/library-comparison/2026-11-15/environment.json)
+- [Actual JVM arguments from all measured forks](benchmarks/library-comparison/2026-11-15/forks.json)
+- [Five passing correctness cases](benchmarks/library-comparison/2026-11-15/correctness.xml)
+
+The [benchmark methods](src/comparison/java/com/lemadane/jax/comparison/LibraryComparisonBenchmark.java) and [shared workload/configuration](src/comparison/java/com/lemadane/jax/comparison/ComparisonWorkload.java) are included for review.
+
+### Optimization follow-up
+
+JAX now caches POJO constructors, setters, fields, getters, and XML text metadata by class using `ClassValue`. It retains input-dependent constructor selection and validation on every call. XML serialization reuses inherited namespace mappings until a new declaration requires a copy. JSON parsing and escaping avoid temporary builders for strings without escapes.
+
+The same complete fixtures and JMH settings were rerun after these changes. The original comparison above is retained as the baseline; its raw files have not been overwritten.
+
+| Format | JAX before, µs/op | JAX after, µs/op | JAX speedup | Jackson in new run, µs/op | Gson in new run, µs/op |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| JSON | 354.29 | 111.86 ± 3.75 | 3.17× | 35.38 ± 2.79 | 46.14 ± 6.42 |
+| XML | 2,643.75 | 1,189.28 ± 147.04 | 2.22× | 447.00 ± 18.26 | N/A |
+
+| Format | JAX allocation before, KiB/op | JAX allocation after, KiB/op | Reduction |
+| --- | ---: | ---: | ---: |
+| JSON | 498.68 | 119.57 | 76.0% |
+| XML | 2,915.49 | 788.86 | 72.9% |
+
+**JAX improved substantially but has not matched Jackson on these fixtures.** In the new run, JAX still takes about **3.2×** Jackson’s JSON time and **2.7×** its XML time; Gson also remains faster for JSON. Further work should target the remaining intermediate trees and mapping allocations, guided by profiling. The `±` values use the same JMH confidence convention as the original table.
+
+Validation: **367 core tests and five library comparison cases passed**, with **97.21% line coverage** and the 97% coverage gate unchanged. New regressions exercise concurrent JSON/XML round trips, inherited accessors, attributes and text, validation after cache warmup, and plain/escaped Unicode strings. XML namespace-scope tests also pass.
+
+The monitoring-agent limitation still applies. Speedups compare separate local runs and are not production guarantees. See the [optimized raw JMH results](benchmarks/library-comparison/2026-11-15/optimized/results.json), [environment](benchmarks/library-comparison/2026-11-15/optimized/environment.json), [fork arguments](benchmarks/library-comparison/2026-11-15/optimized/forks.json), and [correctness results](benchmarks/library-comparison/2026-11-15/optimized/correctness.xml). Run `./gradlew build compareLibraries` with JDK 17 to verify and repeat the measurements.
+
+The [validation counts and coverage counters](benchmarks/library-comparison/2026-11-15/optimized/validation.json) and [source hashes](benchmarks/library-comparison/2026-11-15/optimized/source-sha256.json) identify the verified implementation.
+
+### AST optimization follow-up
+
+At this stage, JAX used intermediate syntax trees: its recursive-descent JSON parser produced `JsonNode` objects, and its StAX-based XML reader produced `XmlElement` objects. Mapping walked those trees to construct Java objects; serialization also built a tree before writing text.
+
+That update reduced tree-processing overhead while retaining that architecture:
+
+- JSON parsing reuses one diagnostic-path buffer per parse instead of allocating a complete path string for every property and array item. Errors still report the full location.
+- Immutable JSON `true`, `false`, and `null` nodes are shared during parsing and serialization.
+- XML nodes reuse their read-only collection views, preserving live updates while the tree is built.
+- XML text traversal returns existing leaf text directly and uses one builder for nested mixed content.
+
+The same full fixtures, JDK, heap, warmup, forks, and round-trip operation were used again:
+
+| Format | Library | Average time, µs/op ↓ | Allocated KiB/op ↓ |
+| --- | --- | ---: | ---: |
+| JSON | JAX | 129.33 ± 11.72 | 99.03 |
+| JSON | Jackson | 48.58 ± 9.10 | 15.34 |
+| JSON | Gson | 52.05 ± 1.84 | 31.05 |
+| XML | JAX | 1,546.98 ± 146.02 | 782.83 |
+| XML | Jackson XML | 595.34 ± 39.20 | 150.91 |
+
+Compared with the previous optimization run, **JAX JSON allocation fell from 119.57 to 99.03 KiB/op (17.2%)**. XML allocation stayed roughly flat, changing from 788.86 to 782.83 KiB/op (0.8%). **This run does not establish a latency improvement:** timings increased for JAX and for the unchanged Jackson/Gson implementations, indicating different run conditions. Jackson and Gson remain faster on the supported fixtures. Reducing or avoiding complete intermediate trees remains a larger architectural opportunity.
+
+**Validation:** 375 core tests and five comparison cases passed, with 97.23% line coverage and 91.90% branch coverage. New regressions check exact nested error locations after sibling traversal, retained read-only XML views, and text order after child edits. The 97% coverage gate remains unchanged.
+
+These remain instrumented local measurements: Dynatrace was present in every benchmark fork. The `±` values are JMH's 99.9% confidence errors. The original and previous optimization results above are retained for comparison.
+
+Recorded evidence: [raw JMH results](benchmarks/library-comparison/2026-11-15/ast/results.json), [environment](benchmarks/library-comparison/2026-11-15/ast/environment.json), [fork arguments](benchmarks/library-comparison/2026-11-15/ast/forks.json), [comparison correctness](benchmarks/library-comparison/2026-11-15/ast/correctness.xml), [test/coverage totals](benchmarks/library-comparison/2026-11-15/ast/validation.json), and [source hashes](benchmarks/library-comparison/2026-11-15/ast/source-sha256.json). Reproduce with JDK 17 and `./gradlew build compareLibraries`.
+
+### Direct serialization follow-up
+
+JAX now writes JSON and XML directly from Java objects, avoiding a complete output tree on the normal path. JSON retains the tree writer for unusual maps or Java fields whose decoded names collide, preserving their existing behavior. Name encoding, namespace scope, attributes, text, collection markers, escaping, cycle detection, and depth limits remain in place. Reading still uses the existing AST mappers.
+
+The same complete fixtures were tested again. One operation remains **string → typed POJO → string → typed POJO**. Two additional benchmark methods use the retained tree writers with the same readers, allowing the write-path change to be compared within one run.
+
+| Format | Implementation | Average time, µs/op ↓ | Allocated KiB/op ↓ |
+| --- | --- | ---: | ---: |
+| JSON | JAX direct writer | 95.30 ± 1.31 | 88.33 |
+| JSON | JAX tree-writer control | 105.83 ± 5.96 | 99.03 |
+| JSON | Jackson | 35.28 ± 1.98 | 15.34 |
+| JSON | Gson | 38.56 ± 5.91 | 31.05 |
+| XML | JAX direct writer | 1,109.04 ± 126.26 | 719.73 |
+| XML | JAX tree-writer control | 1,104.18 ± 90.93 | 769.27 |
+| XML | Jackson XML | 462.55 ± 28.36 | 150.87 |
+
+**JSON round-trip time fell by 9.9% and allocation by 10.8%** relative to the tree-writer control in this run. **XML allocation fell by 6.4%; no XML latency improvement was established**, because the timing difference is within the confidence errors. JAX still takes about **2.7× Jackson's JSON time**, **2.5× Gson's JSON time**, and **2.4× Jackson XML's time** on these fixtures.
+
+**Validation:** 384 core tests and seven comparison cases passed, with **97.38% line coverage** and **92.41% branch coverage**. The 97% line gate is unchanged. The two added comparison cases verify the complete fixtures through the retained tree writers and require their output to match direct serialization exactly. New regressions cover deterministic random nested graphs, decoded-name collisions, inherited fields, unusual map keys, primitive arrays, empty/null values, failing accessors, numeric boundaries, namespace rebinding, and attributes with text.
+
+A direct JSON reader was also prototyped and tested. It validated the entire input before binding, preserving the rule that malformed input cannot call constructors or setters. However, with the same direct writer, it measured **157.65 ± 10.05 µs/op**, versus **118.66 ± 1.86 µs/op** for the AST reader in that experiment: about **33% longer**, with slightly more allocation. **That reader was not retained.** Its [results and reproducible candidate patch](benchmarks/library-comparison/2026-11-15/direct-reader-experiment/README.md) are saved separately. This experiment shows why removing a tree alone is not sufficient: an extra validation pass can outweigh the savings. These experimental timings come from a different run and should not be substituted into the retained-implementation table above.
+
+Settings remain JDK 17, JMH 1.36, one thread, two forks, five 1-second warmup and measurement iterations per fork, and a fixed 512 MiB heap. Both XML implementations use Woodstox 7.1.1. Dynatrace was present in all 14 measured forks of the retained implementation. `±` is JMH's 99.9% confidence error; allocations are bytes allocated per operation, not retained or peak memory. These are local instrumented measurements on two fixtures, not production guarantees.
+
+Recorded evidence: [raw JMH results](benchmarks/library-comparison/2026-11-15/direct-writers/results.json), [environment](benchmarks/library-comparison/2026-11-15/direct-writers/environment.json), [fork arguments](benchmarks/library-comparison/2026-11-15/direct-writers/forks.json), [comparison correctness](benchmarks/library-comparison/2026-11-15/direct-writers/correctness.xml), [test/coverage totals](benchmarks/library-comparison/2026-11-15/direct-writers/validation.json), and [source hashes](benchmarks/library-comparison/2026-11-15/direct-writers/source-sha256.json). The implementation was restored to these exact source hashes after rejecting the reader prototype. Reproduce with JDK 17 and `./gradlew build compareLibraries`.
+
+### Reader binding follow-up
+
+The JSON and XML POJO readers now cache setter parameter types and skip constructor matching for classes with only a no-argument constructor. XML serialization also avoids copying text and attribute values that need no escaping, while still validating every character. Parsing, encoded names, namespace handling, attributes, constructor selection, and strict/partial mapping retain their existing behavior.
+
+The same complete fixtures were measured again with **string → typed POJO → string → typed POJO**. These are the latest results; tree-writer controls use the current readers and shared escaping code.
+
+| Format | Implementation | Average time, µs/op ↓ | Allocated KiB/op ↓ |
+| --- | --- | ---: | ---: |
+| JSON | JAX | 106.09 ± 1.76 | 80.92 |
+| JSON | JAX tree-writer control | 121.74 ± 6.49 | 91.93 |
+| JSON | Jackson | 38.75 ± 6.75 | 15.34 |
+| JSON | Gson | 35.67 ± 1.17 | 31.05 |
+| XML | JAX | 1,360.47 ± 133.55 | 685.03 |
+| XML | JAX tree-writer control | 1,380.94 ± 110.35 | 735.42 |
+| XML | Jackson XML | 566.36 ± 39.60 | 150.89 |
+
+Compared with a fresh run of the saved pre-change sources, **JSON allocation fell 8.4%** (88.33 → 80.92 KiB/op) and **XML allocation fell 5.0%** (721.06 → 685.03 KiB/op). JSON mean time moved from 123.53 ± 16.73 to 106.09 ± 1.76 µs/op; XML moved from 1,395.02 ± 183.72 to 1,360.47 ± 133.55 µs/op. Timing confidence intervals overlap, and the control libraries also moved between these separate runs, so the measurements do not isolate a reliable latency improvement from the code change. The clearest improvement is lower allocation. JAX still takes about **2.7× Jackson's JSON time**, **3.0× Gson's JSON time**, and **2.4× Jackson XML's time** in the latest run.
+
+**Validation:** 396 core tests and seven comparison cases passed, with **97.28% line coverage** and **92.53% branch coverage**. The 97% line gate and Checkstyle both pass. Twelve added regressions cover cached setters, inherited/encoded names, generic collections and arrays, constructor selection, delayed failures, Unicode escaping, and invalid characters before and after an escape. Validation also caught and corrected an unrelated blank entry where `private` belonged in the source generator's Java keyword list.
+
+An XML field/child indexing candidate was tested and **discarded**: it increased XML allocation by 2.1% without a clear timing benefit. Its results are retained separately in the [experiment report](benchmarks/library-comparison/2026-11-15/reader-bindings/README.md#rejected-xml-index-experiment).
+
+Settings remain Java 17, one thread, two forks, five 1-second warmup and measurement iterations, and a 512 MiB heap. Both XML libraries use Woodstox 7.1.1. Dynatrace was active in all 14 forks of each run. `±` is JMH's 99.9% confidence error; allocation is per operation, not retained heap. These local measurements are not production guarantees.
+
+Evidence: [before results](benchmarks/library-comparison/2026-11-15/reader-bindings/before/results.json), [latest results](benchmarks/library-comparison/2026-11-15/reader-bindings/after/results.json), [environment](benchmarks/library-comparison/2026-11-15/reader-bindings/after/environment.json), [forks](benchmarks/library-comparison/2026-11-15/reader-bindings/after/forks.json), [correctness](benchmarks/library-comparison/2026-11-15/reader-bindings/after/correctness.xml), [test/coverage totals](benchmarks/library-comparison/2026-11-15/reader-bindings/after/validation.json), [source hashes](benchmarks/library-comparison/2026-11-15/reader-bindings/after/source-sha256.json), and [methodology and reproduction](benchmarks/library-comparison/2026-11-15/reader-bindings/README.md). Reproduce the retained implementation with Java 17 and `./gradlew build compareLibraries`.
 
 ## License
 

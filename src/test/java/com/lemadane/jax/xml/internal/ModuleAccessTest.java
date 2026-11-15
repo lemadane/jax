@@ -38,7 +38,7 @@ class ModuleAccessTest {
     Files.writeString(bean, """
         package fixture.hidden;
         public class Hidden {
-          @com.lemadane.jax.XmlAttribute private String id = "secret";
+          @com.lemadane.jax.XmlAttribute  String id = "secret";
           public Hidden() {}
           public Hidden(String value) {}
         }

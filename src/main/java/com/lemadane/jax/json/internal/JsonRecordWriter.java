@@ -33,9 +33,8 @@ public final class JsonRecordWriter {
   public static String stringifyObject(Object object) {
     Objects.requireNonNull(object, "object must not be null");
     Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-    JsonNode node = toNode(object, visited);
     StringBuilder sb = new StringBuilder();
-    writeNode(node, sb);
+    JsonDirectWriter.write(object, sb, visited, 1);
     return sb.toString();
   }
 
@@ -46,11 +45,11 @@ public final class JsonRecordWriter {
   static JsonNode toNode(Object val, Set<Object> visited, int depth) {
     requireDepth(depth);
     if (val == null) {
-      return new JsonNode.JsonNullNode();
+      return JsonParser.NULL_NODE;
     }
 
     if (val instanceof Optional<?> opt) {
-      return opt.isPresent() ? toNode(opt.get(), visited, depth + 1) : new JsonNode.JsonNullNode();
+      return opt.isPresent() ? toNode(opt.get(), visited, depth + 1) : JsonParser.NULL_NODE;
     }
 
     if (val instanceof Collection<?> || val.getClass().isArray()) {
@@ -97,7 +96,7 @@ public final class JsonRecordWriter {
     }
 
     if (val instanceof Boolean) {
-      return new JsonNode.JsonBooleanNode((Boolean) val);
+      return ((Boolean) val) ? JsonParser.TRUE_NODE : JsonParser.FALSE_NODE;
     }
 
     if (val instanceof Number num) {
@@ -224,9 +223,20 @@ public final class JsonRecordWriter {
     if (s == null) {
       return "";
     }
-    StringBuilder sb = new StringBuilder();
     int len = s.length();
-    for (int i = 0; i < len; i++) {
+    int firstEscape = 0;
+    while (firstEscape < len) {
+      char c = s.charAt(firstEscape);
+      if (c < 0x20 || c == '"' || c == '\\') {
+        break;
+      }
+      firstEscape++;
+    }
+    if (firstEscape == len) {
+      return s;
+    }
+    StringBuilder sb = new StringBuilder(len + 16).append(s, 0, firstEscape);
+    for (int i = firstEscape; i < len; i++) {
       char c = s.charAt(i);
       switch (c) {
         case '"' -> sb.append("\\\"");

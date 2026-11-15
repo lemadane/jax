@@ -1,0 +1,148 @@
+--- a/src/main/java/com/lemadane/jax/xml/internal/XmlObjectReader.java
++++ b/src/main/java/com/lemadane/jax/xml/internal/XmlObjectReader.java
+@@ -23,6 +23,7 @@
+ import com.lemadane.jax.JsonProperty;
+ import com.lemadane.jax.convert.TypeConverter;
+ import com.lemadane.jax.exceptions.ExcessDataException;
++import com.lemadane.jax.exceptions.NameEncodingException;
+ import com.lemadane.jax.exceptions.RecordConstructionException;
+ import com.lemadane.jax.exceptions.TypeConversionException;
+ import com.lemadane.jax.exceptions.XmlMappingException;
+@@ -46,6 +47,43 @@
+       return List.of(type.getDeclaredConstructors());
+     }
+   };
++
++   static final ClassValue<Boolean> DEFAULT_ONLY = new ClassValue<>() {
++    @Override
++    protected Boolean computeValue(Class<?> type) {
++      return CONSTRUCTORS.get(type).stream().allMatch(constructor -> constructor.getParameterCount() == 0);
++    }
++  };
++
++   static final ClassValue<FieldIndex> FIELD_INDEX = new ClassValue<>() {
++    @Override
++    protected FieldIndex computeValue(Class<?> type) {
++      Map<Field, String> names = new HashMap<>();
++      Map<String, Field> aliases = new HashMap<>();
++      try {
++        for (Field field : publicInstanceFields(type)) {
++          String name = DataNameCodec.decode(field.getName());
++          names.put(field, name);
++          aliases.putIfAbsent(name, field);
++          aliases.putIfAbsent(field.getName(), field);
++        }
++      } catch (NameEncodingException | IllegalArgumentException e) {
++        // Invalid names must still fail at their original point in traversal.
++        return new FieldIndex(Map.of(), null);
++      }
++      return new FieldIndex(Map.copyOf(names), Map.copyOf(aliases));
++    }
++  };
++
++   record FieldIndex(Map<Field, String> names, Map<String, Field> aliases) {
++    String name(Field field) {
++      return aliases == null ? DataNameCodec.decode(field.getName()) : names.get(field);
++    }
++
++    Field find(List<Field> fields, String name) {
++      return aliases == null ? findField(fields, name) : aliases.get(name);
++    }
++  }
+ 
+   public static <T> T toObject(String xml, Class<T> targetType) {
+     return toObject(xml, targetType, true);
+@@ -92,9 +130,10 @@
+       setField(field, instance, value, targetType, attributePath);
+     }
+ 
++    FieldIndex fieldIndex = FIELD_INDEX.get(targetType);
+     for (XmlElement child : childElements) {
+       String childName = DataNameCodec.decode(child.name());
+-      if (strict && findField(fields, childName) == null && findSetter(targetType, childName, path) == null
++      if (strict && fieldIndex.find(fields, childName) == null && findSetter(targetType, childName, path) == null
+           && !result.consumedProperties().contains(childName)) {
+         throw new ExcessDataException(
+             "Excess XML element <" + child.name() + "> at " + path
+@@ -103,15 +142,16 @@
+       }
+     }
+ 
++    Map<String, List<XmlElement>> childrenByName = indexChildren(childElements);
+     for (Field field : fields) {
+-      String fieldName = DataNameCodec.decode(field.getName());
++      String fieldName = fieldIndex.name(field);
+       if (field.isAnnotationPresent(XmlAttribute.class)) {
+         continue;
+       }
+       if (result.consumedProperties().contains(fieldName)) {
+         continue;
+       }
+-      List<XmlElement> matches = matchingElements(childElements, fieldName);
++      List<XmlElement> matches = childrenByName.getOrDefault(fieldName, List.of());
+       if (matches.isEmpty()) {
+         continue;
+       }
+@@ -145,7 +185,7 @@
+     Set<String> appliedSetters = new HashSet<>();
+     for (XmlElement child : childElements) {
+       String propertyName = DataNameCodec.decode(child.name());
+-      if (result.consumedProperties().contains(propertyName) || findField(fields, propertyName) != null
++      if (result.consumedProperties().contains(propertyName) || fieldIndex.find(fields, propertyName) != null
+           || !appliedSetters.add(propertyName)) {
+         continue;
+       }
+@@ -153,7 +193,7 @@
+       if (setter == null) {
+         continue;
+       }
+-      List<XmlElement> matches = matchingElements(childElements, propertyName);
++      List<XmlElement> matches = childrenByName.getOrDefault(propertyName, List.of());
+       if (matches.isEmpty()) {
+         continue;
+       }
+@@ -194,6 +234,9 @@
+       String path,
+       boolean strict
+   ) {
++    if (DEFAULT_ONLY.get(targetType)) {
++      return new ConstructorResult<>(createInstance(targetType, path), Set.of(), Set.of());
++    }
+     List<Constructor<?>> matchingConstructors = new ArrayList<>();
+     List<Set<String>> matchingPropertySets = new ArrayList<>();
+     boolean missingParameterNames = false;
+@@ -491,6 +534,34 @@
+     return matches;
+   }
+ 
++  static Map<String, List<XmlElement>> indexChildren(List<XmlElement> elements) {
++    if (elements.isEmpty()) {
++      return Map.of();
++    }
++    Map<String, List<XmlElement>> byName = new HashMap<>();
++    for (XmlElement element : elements) {
++      String decodedName = DataNameCodec.decode(element.name());
++      addChild(byName, decodedName, element);
++      if (!decodedName.equals(element.name())) {
++        addChild(byName, element.name(), element);
++      }
++    }
++    return byName;
++  }
++
++   static void addChild(Map<String, List<XmlElement>> byName, String name, XmlElement element) {
++    List<XmlElement> matches = byName.get(name);
++    if (matches == null) {
++      byName.put(name, List.of(element));
++    } else {
++      if (matches.size() == 1) {
++        matches = new ArrayList<>(matches);
++        byName.put(name, matches);
++      }
++      matches.add(element);
++    }
++  }
++
+   static Object readList(Type genericType, List<XmlElement> elements, String path, boolean strict) {
+     for (XmlElement element : elements) {
+       validateMarkerAttributes(element, path);

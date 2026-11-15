@@ -1,0 +1,28 @@
+{
+  "compileCommand": [
+    "/home/lem/.sdkman/candidates/java/17.0.17-amzn/bin/javac",
+    "-parameters",
+    "-encoding",
+    "UTF-8",
+    "-d",
+    "/tmp/jax-reader-before/classes",
+    "@/tmp/jax-reader-before/javac-sources.txt"
+  ],
+  "launchCommandFile": "../command.json",
+  "snapshotMainFirst": true,
+  "noCurrentMainClasses": true,
+  "benchmarkCount": 7,
+  "forkCount": 14,
+  "verifiedFiles": {
+    "source-sha256.json": {
+      "files": 34,
+      "mismatches": []
+    },
+    "class-sha256.json": {
+      "files": 170,
+      "mismatches": []
+    }
+  },
+  "profileSummary": "../profile/summary.json",
+  "profileNote": "Exploratory short JFR sample. Raw recording and JSON export remain temporary and are not suitable for publication because the recording contains environment metadata."
+}

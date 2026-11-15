@@ -66,7 +66,7 @@ public final class DataNameCodec {
   */
   public static String decode(String javaIdentifier) {
     Objects.requireNonNull(javaIdentifier, "javaIdentifier must not be null");
-    if (javaIdentifier.isEmpty()) {
+    if (javaIdentifier.indexOf('$') < 0) {
       return javaIdentifier;
     }
 

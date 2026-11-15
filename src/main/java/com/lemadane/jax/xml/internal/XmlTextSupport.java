@@ -15,7 +15,18 @@ final class XmlTextSupport {
   XmlTextSupport() {
   }
 
+   static final ClassValue<Field> TEXT_FIELD = new ClassValue<>() {
+    @Override
+    protected Field computeValue(Class<?> type) {
+      return inspectTextField(type);
+    }
+  };
+
   static Field field(Class<?> type) {
+    return TEXT_FIELD.get(type);
+  }
+
+   static Field inspectTextField(Class<?> type) {
     Field result = null;
     for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
       for (Field field : current.getDeclaredFields()) {
@@ -47,11 +58,18 @@ final class XmlTextSupport {
   }
 
   static void append(Object object, XmlElement element) {
+    String text = read(object, !element.children().isEmpty());
+    if (text != null) {
+      element.addText(text);
+    }
+  }
+
+  static String read(Object object, boolean hasChildren) {
     Field field = field(object.getClass());
     if (field == null) {
-      return;
+      return null;
     }
-    if (!element.children().isEmpty()) {
+    if (hasChildren) {
       throw new XmlMappingException("@XmlText cannot be combined with child elements on " + object.getClass().getName());
     }
     try {
@@ -64,8 +82,9 @@ final class XmlTextSupport {
       }
       if (value != null) {
         validate(field, value.getClass());
-        element.addText(value instanceof Enum<?> enumValue ? enumValue.name() : value.toString());
+        return value instanceof Enum<?> enumValue ? enumValue.name() : value.toString();
       }
+      return null;
     } catch (IllegalAccessException e) {
       throw new XmlMappingException("Cannot read @XmlText field " + field.getName(), e);
     }

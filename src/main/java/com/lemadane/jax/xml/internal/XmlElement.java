@@ -13,6 +13,10 @@ final class XmlElement {
   final List<XmlElement> children = new ArrayList<>();
   final List<Object> content = new ArrayList<>();
 
+   Map<String, String> attributesView;
+   List<XmlElement> childrenView;
+   List<Object> contentView;
+
   XmlElement(String name) {
     this.name = name;
   }
@@ -22,15 +26,24 @@ final class XmlElement {
   }
 
   Map<String, String> attributes() {
-    return Collections.unmodifiableMap(attributes);
+    if (attributesView == null) {
+      attributesView = Collections.unmodifiableMap(attributes);
+    }
+    return attributesView;
   }
 
   List<XmlElement> children() {
-    return Collections.unmodifiableList(children);
+    if (childrenView == null) {
+      childrenView = Collections.unmodifiableList(children);
+    }
+    return childrenView;
   }
 
   List<Object> content() {
-    return Collections.unmodifiableList(content);
+    if (contentView == null) {
+      contentView = Collections.unmodifiableList(content);
+    }
+    return contentView;
   }
 
   boolean hasAttribute(String name) {
@@ -42,15 +55,25 @@ final class XmlElement {
   }
 
   String textContent() {
+    if (content.isEmpty()) {
+      return "";
+    }
+    if (content.size() == 1 && content.get(0) instanceof String text) {
+      return text;
+    }
     StringBuilder text = new StringBuilder();
+    appendTextTo(text);
+    return text.toString();
+  }
+
+   void appendTextTo(StringBuilder text) {
     for (Object item : content) {
       if (item instanceof String value) {
         text.append(value);
       } else if (item instanceof XmlElement child) {
-        text.append(child.textContent());
+        child.appendTextTo(text);
       }
     }
-    return text.toString();
   }
 
   boolean isEmpty() {

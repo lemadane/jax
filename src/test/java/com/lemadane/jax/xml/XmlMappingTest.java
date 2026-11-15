@@ -177,7 +177,7 @@ class XmlMappingTest {
     StaticFieldsRecord.publicAttr = "before-public";
     StaticFieldsRecord.protectedAttr = "before-protected";
     StaticFieldsRecord.pkgAttr = "before-package";
-    StaticFieldsRecord.privateAttr = "before-private";
+    StaticFieldsRecord.privateAttr = "before-";
     String xml = """
         <StaticFieldsRecord publicAttr="pub" protectedAttr="prot" pkgAttr="pkg" privateAttr="priv">
           <id>S123</id><Extra>invalid</Extra>
@@ -189,7 +189,7 @@ class XmlMappingTest {
     assertThat(StaticFieldsRecord.publicAttr).isEqualTo("before-public");
     assertThat(StaticFieldsRecord.protectedAttr).isEqualTo("before-protected");
     assertThat(StaticFieldsRecord.pkgAttr).isEqualTo("before-package");
-    assertThat(StaticFieldsRecord.getPrivateAttr()).isEqualTo("before-private");
+    assertThat(StaticFieldsRecord.getPrivateAttr()).isEqualTo("before-");
   }
 
   @DisplayName("Final Static Xml Attribute Is Ignored")

@@ -19,11 +19,11 @@ class XmlParserSecurityTest {
   @Test
   void rejectsExternalFileEntitiesWithoutExposingContent() throws Exception {
     Path secret = directory.resolve("secret.txt");
-    Files.writeString(secret, "private-test-content");
+    Files.writeString(secret, "-test-content");
     String xml = "<!DOCTYPE root [<!ENTITY external SYSTEM '" + secret.toUri() + "'>]><root>&external;</root>";
     assertThatThrownBy(() -> XmlRecordReader.parseXmlDocument(xml))
         .isInstanceOf(XmlMappingException.class).hasMessageContaining("DOCTYPE")
-        .hasMessageNotContaining("private-test-content");
+        .hasMessageNotContaining("-test-content");
   }
 
   @Test

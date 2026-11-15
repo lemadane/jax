@@ -9,10 +9,12 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -37,6 +39,20 @@ public final class XmlObjectReader {
 
   XmlObjectReader() {
   }
+
+   static final ClassValue<List<Constructor<?>>> CONSTRUCTORS = new ClassValue<>() {
+    @Override
+    protected List<Constructor<?>> computeValue(Class<?> type) {
+      return List.of(type.getDeclaredConstructors());
+    }
+  };
+
+  static final ClassValue<Boolean> DEFAULT_ONLY = new ClassValue<>() {
+    @Override
+    protected Boolean computeValue(Class<?> type) {
+      return CONSTRUCTORS.get(type).stream().allMatch(constructor -> constructor.getParameterCount() == 0);
+    }
+  };
 
   public static <T> T toObject(String xml, Class<T> targetType) {
     return toObject(xml, targetType, true);
@@ -140,16 +156,17 @@ public final class XmlObjectReader {
           || !appliedSetters.add(propertyName)) {
         continue;
       }
-      Method setter = findSetter(targetType, propertyName, path);
-      if (setter == null) {
+      SetterBinding binding = findSetterBinding(targetType, propertyName, path);
+      if (binding == null) {
         continue;
       }
+      Method setter = binding.method();
       List<XmlElement> matches = matchingElements(childElements, propertyName);
       if (matches.isEmpty()) {
         continue;
       }
-      Class<?> valueType = setter.getParameterTypes()[0];
-      Type genericType = setter.getGenericParameterTypes()[0];
+      Class<?> valueType = binding.parameterType();
+      Type genericType = binding.genericType();
       String propertyPath = path + "/" + propertyName;
       Object value;
       if (valueType.isArray()) {
@@ -185,10 +202,13 @@ public final class XmlObjectReader {
       String path,
       boolean strict
   ) {
+    if (DEFAULT_ONLY.get(targetType)) {
+      return new ConstructorResult<>(createInstance(targetType, path), Set.of(), Set.of());
+    }
     List<Constructor<?>> matchingConstructors = new ArrayList<>();
     List<Set<String>> matchingPropertySets = new ArrayList<>();
     boolean missingParameterNames = false;
-    for (Constructor<?> constructor : targetType.getDeclaredConstructors()) {
+    for (Constructor<?> constructor : CONSTRUCTORS.get(targetType)) {
       if (constructor.getParameterCount() == 0) {
         continue;
       }
@@ -305,9 +325,19 @@ public final class XmlObjectReader {
     }
   }
 
+  @SuppressWarnings("unchecked")
+   static <T> Constructor<T> defaultConstructor(Class<T> type) throws NoSuchMethodException {
+    for (Constructor<?> constructor : CONSTRUCTORS.get(type)) {
+      if (constructor.getParameterCount() == 0) {
+        return (Constructor<T>) constructor;
+      }
+    }
+    throw new NoSuchMethodException(type.getName());
+  }
+
   static <T> T createInstance(Class<T> targetType, String path) {
     try {
-      var constructor = targetType.getDeclaredConstructor();
+      var constructor = defaultConstructor(targetType);
       if (!constructor.trySetAccessible()) {
         throw new XmlMappingException("No accessible no-argument constructor for " + targetType.getName() + " at " + path);
       }
@@ -320,7 +350,18 @@ public final class XmlObjectReader {
     }
   }
 
+   static final ClassValue<List<Field>> PUBLIC_FIELDS = new ClassValue<>() {
+    @Override
+    protected List<Field> computeValue(Class<?> type) {
+      return inspectPublicFields(type);
+    }
+  };
+
   static List<Field> publicInstanceFields(Class<?> type) {
+    return PUBLIC_FIELDS.get(type);
+  }
+
+   static List<Field> inspectPublicFields(Class<?> type) {
     List<Field> fields = new ArrayList<>();
     for (Field field : type.getFields()) {
       if (!Modifier.isStatic(field.getModifiers()) && !field.isSynthetic()
@@ -328,10 +369,21 @@ public final class XmlObjectReader {
         fields.add(field);
       }
     }
-    return fields;
+    return List.copyOf(fields);
   }
 
+   static final ClassValue<List<Field>> ATTRIBUTE_FIELDS = new ClassValue<>() {
+    @Override
+    protected List<Field> computeValue(Class<?> type) {
+      return inspectAttributeFields(type);
+    }
+  };
+
   static List<Field> attributeFields(Class<?> type) {
+    return ATTRIBUTE_FIELDS.get(type);
+  }
+
+   static List<Field> inspectAttributeFields(Class<?> type) {
     List<Field> fields = new ArrayList<>();
     for (Class<?> current = type; current != null && current != Object.class; current = current.getSuperclass()) {
       for (Field field : current.getDeclaredFields()) {
@@ -342,7 +394,7 @@ public final class XmlObjectReader {
         }
       }
     }
-    return fields;
+    return List.copyOf(fields);
   }
 
   static String xmlAttributeName(java.lang.reflect.AnnotatedElement member) {
@@ -398,32 +450,47 @@ public final class XmlObjectReader {
     return null;
   }
 
-  static Method findSetter(Class<?> type, String decodedName, String path) {
-    Method match = null;
-    for (Method method : type.getMethods()) {
-      if (Modifier.isStatic(method.getModifiers()) || method.isBridge() || method.isSynthetic()
-          || method.getParameterCount() != 1 || !method.isAnnotationPresent(JsonProperty.class)) {
-        continue;
+  static final ClassValue<Map<String, List<SetterBinding>>> SETTERS = new ClassValue<>() {
+    @Override
+    protected Map<String, List<SetterBinding>> computeValue(Class<?> type) {
+      Map<String, List<SetterBinding>> methods = new HashMap<>();
+      for (Method method : type.getMethods()) {
+        if (Modifier.isStatic(method.getModifiers()) || method.isBridge() || method.isSynthetic()
+            || method.getParameterCount() != 1 || !method.isAnnotationPresent(JsonProperty.class)) {
+          continue;
+        }
+        String name = method.getName();
+        if (name.startsWith("set") && name.length() > 3 && Character.isUpperCase(name.charAt(3))) {
+          name = Character.toLowerCase(name.charAt(3)) + name.substring(4);
+        }
+        SetterBinding binding = new SetterBinding(method);
+        methods.computeIfAbsent(name, key -> new ArrayList<>()).add(binding);
+        String decoded = DataNameCodec.decode(name);
+        if (!decoded.equals(name)) {
+          methods.computeIfAbsent(decoded, key -> new ArrayList<>()).add(binding);
+        }
       }
-      String methodName = method.getName();
-      String propertyName = methodName;
-      if (methodName.startsWith("set") && methodName.length() > 3
-          && Character.isUpperCase(methodName.charAt(3))) {
-        propertyName = Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
-      }
-      String decodedPropertyName = DataNameCodec.decode(propertyName);
-      if (!decodedPropertyName.equals(decodedName) && !propertyName.equals(decodedName)) {
-        continue;
-      }
-      if (match != null) {
-        throw new XmlMappingException(
-            "Multiple one-argument setters match XML property " + decodedName + " on " + type.getName()
-                + " at " + path
-        );
-      }
-      match = method;
+      methods.replaceAll((name, matches) -> List.copyOf(matches));
+      return Map.copyOf(methods);
     }
-    return match;
+  };
+
+  static Method findSetter(Class<?> type, String decodedName, String path) {
+    SetterBinding binding = findSetterBinding(type, decodedName, path);
+    return binding == null ? null : binding.method();
+  }
+
+  static SetterBinding findSetterBinding(Class<?> type, String decodedName, String path) {
+    List<SetterBinding> matches = SETTERS.get(type).get(decodedName);
+    if (matches == null) {
+      return null;
+    }
+    if (matches.size() > 1) {
+      throw new XmlMappingException(
+          "Multiple one-argument setters match XML property " + decodedName + " on " + type.getName() + " at " + path
+      );
+    }
+    return matches.get(0);
   }
 
   static List<XmlElement> childElements(XmlElement element) {
@@ -621,4 +688,33 @@ public final class XmlObjectReader {
   }
 
   record ConstructorResult<T>(T instance, Set<String> consumedProperties, Set<String> consumedAttributes) {}
+
+  static final class SetterBinding {
+    private final Method method;
+    private final Class<?> parameterType;
+    private volatile Type genericType;
+
+    SetterBinding(Method method) {
+      this.method = method;
+      parameterType = method.getParameterTypes()[0];
+    }
+
+    Method method() {
+      return method;
+    }
+
+    Class<?> parameterType() {
+      return parameterType;
+    }
+
+    Type genericType() {
+      Type cached = genericType;
+      if (cached == null) {
+        // Resolve generic signatures only when selected, preserving failures for unused setters.
+        cached = method.getGenericParameterTypes()[0];
+        genericType = cached;
+      }
+      return cached;
+    }
+  }
 }

@@ -1,0 +1,152 @@
+[
+  {
+    "pid": 868524,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 868630,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 868687,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 868815,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 868907,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 868989,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 869111,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 869196,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 869277,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  },
+  {
+    "pid": 869382,
+    "javaVersion": "17.0.17+10-LTS",
+    "actualJvmArguments": [
+      "-Xms512m",
+      "-Xmx512m",
+      "-Dcomparison.outputDirectory=/tmp/jax-coverage-review-build/results/library-comparison-optimized-final",
+      "-XX:+UnlockDiagnosticVMOptions",
+      "-XX:+UnlockExperimentalVMOptions",
+      "-DcompilerBlackholesEnabled=true",
+      "-XX:CompileCommandFile=/tmp/jmh9738399238179907060compilecommand",
+      "-agentpath:/opt/dynatrace/oneagent/agent/bin/1.327.56.20251218-151643/linux-x86-64/liboneagentjava.so=loglevelcon=none,datastorage=/var/lib/dynatrace/oneagent/datastorage,logdir=/var/log/dynatrace/oneagent"
+    ],
+    "xmlInputProvider": "com.ctc.wstx.stax.WstxInputFactory"
+  }
+]

@@ -53,7 +53,7 @@ class MappingFailureRegressionTest {
   }
 
   public static class BrokenGetter {
-    private String value;
+     String value;
 
     public String value() {
       throw new IllegalStateException("getter failed");

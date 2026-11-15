@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.lemadane.jax.comparison.LibraryComparisonTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-15T15:23:46.344Z" hostname="Lem-ThinkPad-X1-Carbon-Gen-8" time="1.326">
+  <properties/>
+  <testcase name="Full organization JSON: JAX" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.208"/>
+  <testcase name="Full organization JSON: JAX tree writer" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.016"/>
+  <testcase name="Full organization JSON: Jackson" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.169"/>
+  <testcase name="Full organization JSON: Gson" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.019"/>
+  <testcase name="Full supply-chain XML: JAX" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.152"/>
+  <testcase name="Full supply-chain XML: JAX tree writer" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.032"/>
+  <testcase name="Full supply-chain XML: Jackson XML" classname="com.lemadane.jax.comparison.LibraryComparisonTest" time="0.129"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

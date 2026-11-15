@@ -26,6 +26,10 @@ public final class JsonParser {
     record JsonNullNode() implements JsonNode {}
   }
 
+  static final JsonNode.JsonBooleanNode TRUE_NODE = new JsonNode.JsonBooleanNode(true);
+  static final JsonNode.JsonBooleanNode FALSE_NODE = new JsonNode.JsonBooleanNode(false);
+  static final JsonNode.JsonNullNode NULL_NODE = new JsonNode.JsonNullNode();
+
   final String json;
   final int length;
   int pos;
@@ -45,7 +49,7 @@ public final class JsonParser {
     if (parser.pos >= parser.length) {
       throw new JsonMappingException("Empty JSON content");
     }
-    JsonNode root = parser.parseValue("$", 0);
+    JsonNode root = parser.parseValue(new StringBuilder("$"), 0);
     parser.skipWhitespace();
     if (parser.pos < parser.length) {
       throw new JsonMappingException("Trailing non-whitespace content after root JSON value at index " + parser.pos);
@@ -53,7 +57,7 @@ public final class JsonParser {
     return root;
   }
 
-  JsonNode parseValue(String path, int depth) {
+  JsonNode parseValue(CharSequence path, int depth) {
     skipWhitespace();
     if (pos >= length) {
       throw new JsonMappingException("Unexpected end of JSON input at " + path);
@@ -79,7 +83,7 @@ public final class JsonParser {
     }
   }
 
-  void requireDepth(String path, int depth) {
+  void requireDepth(CharSequence path, int depth) {
     if (depth >= MAX_NESTING_DEPTH) {
       throw new JsonMappingException(
           "Maximum JSON nesting depth of " + MAX_NESTING_DEPTH + " exceeded at " + path
@@ -87,7 +91,7 @@ public final class JsonParser {
     }
   }
 
-  JsonNode.JsonObjectNode parseObject(String path, int depth) {
+  JsonNode.JsonObjectNode parseObject(CharSequence path, int depth) {
     expect('{', path);
     skipWhitespace();
     Map<String, JsonNode> members = new LinkedHashMap<>();
@@ -97,6 +101,8 @@ public final class JsonParser {
       return new JsonNode.JsonObjectNode(members);
     }
 
+    StringBuilder currentPath = path instanceof StringBuilder builder ? builder : new StringBuilder(path);
+    int parentLength = currentPath.length();
     while (pos < length) {
       skipWhitespace();
       if (pos >= length || json.charAt(pos) != '"') {
@@ -104,16 +110,17 @@ public final class JsonParser {
       }
 
       String key = parseStringValue(path);
-      String propPath = path + "." + key;
-
-      if (members.containsKey(key)) {
-        throw new JsonMappingException("Duplicate JSON key \"" + key + "\" encountered at " + propPath);
+      currentPath.append('.').append(key);
+      try {
+        if (members.containsKey(key)) {
+          throw new JsonMappingException("Duplicate JSON key \"" + key + "\" encountered at " + currentPath);
+        }
+        skipWhitespace();
+        expect(':', currentPath);
+        members.put(key, parseValue(currentPath, depth));
+      } finally {
+        currentPath.setLength(parentLength);
       }
-
-      skipWhitespace();
-      expect(':', propPath);
-      JsonNode value = parseValue(propPath, depth);
-      members.put(key, value);
 
       skipWhitespace();
       if (pos < length && json.charAt(pos) == ',') {
@@ -129,7 +136,7 @@ public final class JsonParser {
     throw new JsonMappingException("Unterminated JSON object at " + path);
   }
 
-  JsonNode.JsonArrayNode parseArray(String path, int depth) {
+  JsonNode.JsonArrayNode parseArray(CharSequence path, int depth) {
     expect('[', path);
     skipWhitespace();
     List<JsonNode> elements = new ArrayList<>();
@@ -140,10 +147,15 @@ public final class JsonParser {
     }
 
     int index = 0;
+    StringBuilder currentPath = path instanceof StringBuilder builder ? builder : new StringBuilder(path);
+    int parentLength = currentPath.length();
     while (pos < length) {
-      String elemPath = path + "[" + index + "]";
-      JsonNode element = parseValue(elemPath, depth);
-      elements.add(element);
+      currentPath.append('[').append(index).append(']');
+      try {
+        elements.add(parseValue(currentPath, depth));
+      } finally {
+        currentPath.setLength(parentLength);
+      }
       index++;
 
       skipWhitespace();
@@ -160,13 +172,29 @@ public final class JsonParser {
     throw new JsonMappingException("Unterminated JSON array at " + path);
   }
 
-  JsonNode.JsonStringNode parseString(String path) {
+  JsonNode.JsonStringNode parseString(CharSequence path) {
     return new JsonNode.JsonStringNode(parseStringValue(path));
   }
 
-  String parseStringValue(String path) {
+  String parseStringValue(CharSequence path) {
     expect('"', path);
-    StringBuilder sb = new StringBuilder();
+    int start = pos;
+    while (pos < length) {
+      char c = json.charAt(pos);
+      if (c == '"') {
+        String value = json.substring(start, pos);
+        pos++;
+        return value;
+      }
+      if (c == '\\') {
+        break;
+      }
+      if (c < 0x20) {
+        throw new JsonMappingException("Unescaped control character 0x" + Integer.toHexString(c) + " in string at " + path);
+      }
+      pos++;
+    }
+    StringBuilder sb = new StringBuilder().append(json, start, pos);
 
     while (pos < length) {
       char c = json.charAt(pos++);
@@ -218,7 +246,7 @@ public final class JsonParser {
     throw new JsonMappingException("Unterminated string at " + path);
   }
 
-  int parseHex4(String path) {
+  int parseHex4(CharSequence path) {
     if (pos + 4 > length) {
       throw new JsonMappingException("Invalid Unicode escape sequence at " + path);
     }
@@ -240,26 +268,26 @@ public final class JsonParser {
     return value;
   }
 
-  JsonNode.JsonBooleanNode parseBoolean(String path) {
+  JsonNode.JsonBooleanNode parseBoolean(CharSequence path) {
     if (json.startsWith("true", pos)) {
       pos += 4;
-      return new JsonNode.JsonBooleanNode(true);
+      return TRUE_NODE;
     } else if (json.startsWith("false", pos)) {
       pos += 5;
-      return new JsonNode.JsonBooleanNode(false);
+      return FALSE_NODE;
     }
     throw new JsonMappingException("Invalid boolean literal at " + path);
   }
 
-  JsonNode.JsonNullNode parseNull(String path) {
+  JsonNode.JsonNullNode parseNull(CharSequence path) {
     if (json.startsWith("null", pos)) {
       pos += 4;
-      return new JsonNode.JsonNullNode();
+      return NULL_NODE;
     }
     throw new JsonMappingException("Invalid null literal at " + path);
   }
 
-  JsonNode.JsonNumberNode parseNumber(String path) {
+  JsonNode.JsonNumberNode parseNumber(CharSequence path) {
     int start = pos;
     if (json.charAt(pos) == '-') {
       pos++;
@@ -317,7 +345,7 @@ public final class JsonParser {
     }
   }
 
-  static void validateNumberSize(String rawNumber, String path) {
+  static void validateNumberSize(String rawNumber, CharSequence path) {
     if (rawNumber.length() > MAX_NUMBER_TOKEN_LENGTH) {
       throw new JsonMappingException(
           "JSON number exceeds maximum token length of " + MAX_NUMBER_TOKEN_LENGTH + " at " + path
@@ -339,7 +367,7 @@ public final class JsonParser {
     }
   }
 
-  void expect(char expected, String path) {
+  void expect(char expected, CharSequence path) {
     if (pos >= length || json.charAt(pos) != expected) {
       throw new JsonMappingException("Expected '" + expected + "' at " + path);
     }

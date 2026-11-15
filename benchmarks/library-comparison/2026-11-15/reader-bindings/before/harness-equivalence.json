@@ -1,0 +1,147 @@
+{
+  "identicalExceptPrivateToPackageAccess": true,
+  "differentClassCount": 6,
+  "allOtherClassBytesIdentical": true,
+  "conclusion": "Only ACC_PRIVATE access bits changed on the listed members. Method code, constant pools, descriptors, annotations, debug metadata, and all other class bytes are identical. Timed operations execute the same bytecode. The classes containing affected instance helper methods are final.",
+  "classes": [
+    {
+      "class": "com/lemadane/jax/comparison/ComparisonRunner.class",
+      "classSize": 9635,
+      "beforeSha256": "3917785dbdfe150c281f3aba8584f84214d030cb4f5a870e91d61678cf58f70d",
+      "afterSha256": "c0ce8c2f614fe8228656e543d4addf22b973f8e6b73e7c0802ee06370555f941",
+      "onlyChanges": [
+        {
+          "kind": "method",
+          "name": "<init>",
+          "descriptor": "()V",
+          "beforeAccessFlags": 2,
+          "afterAccessFlags": 0
+        },
+        {
+          "kind": "method",
+          "name": "command",
+          "descriptor": "([Ljava/lang/String;)Ljava/lang/String;",
+          "beforeAccessFlags": 138,
+          "afterAccessFlags": 136
+        },
+        {
+          "kind": "method",
+          "name": "fixture",
+          "descriptor": "(Ljava/lang/String;)Ljava/util/Map;",
+          "beforeAccessFlags": 10,
+          "afterAccessFlags": 8
+        }
+      ]
+    },
+    {
+      "class": "com/lemadane/jax/comparison/ComparisonWorkload.class",
+      "classSize": 7276,
+      "beforeSha256": "eda8f36e7d001919fce4ed67ed8cfe877e12b582daa348ae23f74283df8a5650",
+      "afterSha256": "8bfc697044be03e11afe47acb08dac51f59404ed93bfc0a148f996af864cdc35",
+      "onlyChanges": [
+        {
+          "kind": "method",
+          "name": "fieldsOnly",
+          "descriptor": "(Lcom/fasterxml/jackson/databind/ObjectMapper;)V",
+          "beforeAccessFlags": 10,
+          "afterAccessFlags": 8
+        },
+        {
+          "kind": "method",
+          "name": "resource",
+          "descriptor": "(Ljava/lang/String;)Ljava/lang/String;",
+          "beforeAccessFlags": 10,
+          "afterAccessFlags": 8
+        },
+        {
+          "kind": "method",
+          "name": "namespaces",
+          "descriptor": "(Ljava/lang/String;)Ljava/util/Map;",
+          "beforeAccessFlags": 10,
+          "afterAccessFlags": 8
+        }
+      ]
+    },
+    {
+      "class": "com/lemadane/jax/comparison/JaxXmlIntrospector.class",
+      "classSize": 5388,
+      "beforeSha256": "69adc7118773da0fc5dc5d29df41da9b42381f3a2d1d7ef82655363cf016fa20",
+      "afterSha256": "853236ce55b4504197f7e0eff2c730561ebce25c3f4e0c3a0e299de0d0b1a82b",
+      "onlyChanges": [
+        {
+          "kind": "field",
+          "name": "serialVersionUID",
+          "descriptor": "J",
+          "beforeAccessFlags": 26,
+          "afterAccessFlags": 24
+        },
+        {
+          "kind": "field",
+          "name": "namespaces",
+          "descriptor": "Ljava/util/Map;",
+          "beforeAccessFlags": 18,
+          "afterAccessFlags": 16
+        },
+        {
+          "kind": "method",
+          "name": "externalName",
+          "descriptor": "(Lcom/fasterxml/jackson/databind/introspect/Annotated;)Ljava/lang/String;",
+          "beforeAccessFlags": 2,
+          "afterAccessFlags": 0
+        },
+        {
+          "kind": "method",
+          "name": "qualified",
+          "descriptor": "(Ljava/lang/String;)Lcom/fasterxml/jackson/databind/PropertyName;",
+          "beforeAccessFlags": 2,
+          "afterAccessFlags": 0
+        }
+      ]
+    },
+    {
+      "class": "com/lemadane/jax/comparison/LibraryComparisonBenchmark.class",
+      "classSize": 4090,
+      "beforeSha256": "e832d06bd43cbee26046de14ecd5f725851c8904a7cda51638478b356d80bc01",
+      "afterSha256": "688f13d7ae1d46d768d9f4c94e0ab9870358df4a5442aba4c0949052c107aeb9",
+      "onlyChanges": [
+        {
+          "kind": "field",
+          "name": "workload",
+          "descriptor": "Lcom/lemadane/jax/comparison/ComparisonWorkload;",
+          "beforeAccessFlags": 2,
+          "afterAccessFlags": 0
+        }
+      ]
+    },
+    {
+      "class": "com/lemadane/jax/json/internal/JsonTreeWriterBaseline.class",
+      "classSize": 1428,
+      "beforeSha256": "4cfb83d71e490f6fb4d126e074744f578989fa657f7978004c896c44941c9e06",
+      "afterSha256": "eae231249ddbc3f85a953496e16aec43831cae2f619d139ead6c2ae8bdd85c89",
+      "onlyChanges": [
+        {
+          "kind": "method",
+          "name": "<init>",
+          "descriptor": "()V",
+          "beforeAccessFlags": 2,
+          "afterAccessFlags": 0
+        }
+      ]
+    },
+    {
+      "class": "com/lemadane/jax/xml/internal/XmlTreeWriterBaseline.class",
+      "classSize": 1295,
+      "beforeSha256": "a1fa912cb58ae81a05915a5a068f8895f622e6e380a2fb9105f57827e8b59539",
+      "afterSha256": "915b6e4c9ebd309a901ab763d199b5f3426dc422cf9b3708d0d394fd2c9e008a",
+      "onlyChanges": [
+        {
+          "kind": "method",
+          "name": "<init>",
+          "descriptor": "()V",
+          "beforeAccessFlags": 2,
+          "afterAccessFlags": 0
+        }
+      ]
+    }
+  ]
+}
