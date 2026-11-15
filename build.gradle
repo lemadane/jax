@@ -1,11 +1,13 @@
 plugins {
     id 'java'
+    id 'application'
     id 'maven-publish'
     id 'jacoco'
     id 'checkstyle'
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
-group = 'io.lemadane'
+group = 'com.lemadane'
 version = '0.1.0-SNAPSHOT'
 
 java {
@@ -15,8 +17,20 @@ java {
     withJavadocJar()
 }
 
+application {
+    mainClass = 'com.lemadane.jax.cli.JaxCli'
+}
+
+jar {
+    archiveBaseName = 'jax'
+    manifest {
+        attributes 'Main-Class': application.mainClass
+    }
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.release = 17
+    options.compilerArgs.add('-parameters')
 }
 
 repositories {
@@ -29,7 +43,17 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+jmh {
+    warmupIterations = 3
+    iterations = 5
+    fork = 1
+    timeOnIteration = '1s'
+    resultFormat = 'JSON'
+}
+
 tasks.named('test', Test) {
+    dependsOn tasks.named('jar')
+    systemProperty 'jax.jar.path', tasks.named('jar', Jar).get().archiveFile.get().asFile.absolutePath
     useJUnitPlatform()
     finalizedBy tasks.named('jacocoTestReport')
 }
@@ -72,14 +96,14 @@ publishing {
     publications {
         mavenJava(MavenPublication) {
             from components.java
-            groupId = 'io.lemadane'
-            artifactId = 'record-data'
+            groupId = 'com.lemadane'
+            artifactId = 'jax'
             version = '0.1.0-SNAPSHOT'
 
             pom {
-                name = 'record-data'
+                name = 'jax'
                 description = 'Java XML and JSON Record Mapping Library'
-                url = 'https://github.com/lemadane/record-data'
+                url = 'https://github.com/lemadane/jaxtor'
                 licenses {
                     license {
                         name = 'The MIT License'
@@ -93,9 +117,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection = 'scm:git:git://github.com/lemadane/record-data.git'
-                    developerConnection = 'scm:git:ssh://github.com/lemadane/record-data.git'
-                    url = 'https://github.com/lemadane/record-data'
+                    connection = 'scm:git:git://github.com/lemadane/jaxtor.git'
+                    developerConnection = 'scm:git:ssh://github.com/lemadane/jaxtor.git'
+                    url = 'https://github.com/lemadane/jaxtor'
                 }
             }
         }
@@ -103,7 +127,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/" + (System.getenv("GITHUB_REPOSITORY") ?: "YOUR_GITHUB_USERNAME/record-data"))
+            url = uri("https://maven.pkg.github.com/" + (System.getenv("GITHUB_REPOSITORY") ?: "lemadane/jaxtor"))
             credentials {
                 username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user")
                 password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key")

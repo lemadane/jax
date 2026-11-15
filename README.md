@@ -1,36 +1,37 @@
-# JSON-And-XML-To-Record
+# JAX — JSON-And-XML-To-Record
 
-Production-ready, zero-dependency standard Java 17+ library for bi-directional mapping between JSON and XML documents and strongly typed Java records.
+Production-ready, zero-dependency standard Java 17+ library for bi-directional mapping between JSON and XML documents and strongly typed Java records, plus mapping JSON documents to mutable Java classes.
 
-Built purely on Java reflection and standard APIs, `Json2Record` requires no third-party JSON libraries and works seamlessly across Spring Boot, Quarkus, Micronaut, and standalone JVM applications.
+Built purely on Java reflection and standard APIs, `Jax` requires no third-party JSON libraries and works seamlessly across Spring Boot, Quarkus, Micronaut, and standalone JVM applications.
+
+JSON and XML input are parsed into Jax-owned abstract syntax trees before mapping. Serialization follows the reverse path: Java values become JSON or XML nodes, which are then emitted as text. XML parsing uses JDK StAX and Jax-owned nodes rather than W3C DOM.
 
 ---
 
 ## Key Requirements & Coordinates
 
 * **Java Version**: Minimum required JVM version is **Java 17**.
-* **Maven Coordinates**: `io.lemadane:record-data:0.1.0-SNAPSHOT`
-* **Base Package**: `io.lemadane.json2record`
+* **Maven Coordinates**: `com.lemadane:jax:0.1.0-SNAPSHOT`
+* **Base Package**: `com.lemadane.jax`
 
 ```java
-Record record = JSON.parse(Class<Record> Record.class, String json);
-// converts JSON to Java Record.
+MyRecord record = Jax.toObject(json, MyRecord.class);
+// converts JSON to a Java Record.
 
-Record record = XML.parse(Class<Record> Record.class, String xml);
-// converts XML to Java Record.
+MyRecord record = Jax.toObject(xml, MyRecord.class);
+// converts XML to a Java Record.
 
-String json = JSON.stringify(Record record);
-// converts Java Record to JSON.
+String json = Jax.toJson(anObject);
+// converts a POJO or Java Record to JSON.
 
-String xml = XML.stringify(Record record);
-// converts Java Record to XML.
+String xml = Jax.toXml(anObject);
+// converts a POJO or Java Record to XML.
 
-Record record = JSON.partialParse(Class<Record> Record.class, String json);
-// json data maps to declared Java Record components, ignoring other undeclared data,  
+Record record = Jax.toPartialObject(json, Record.class);
+// JSON data maps to declared Java Record components, ignoring undeclared properties.
 
-Record record = XML.partialParse(Class<Record> Record.class, String xml);
-// xml data maps to declared Java Record components, ignoring other undeclared data,  
-// XML attributes map to matching mutable static fields.
+Record record = Jax.toPartialObject(xml, Record.class);
+// XML data maps to declared Java Record components, ignoring undeclared elements.
 
 ```
 
@@ -42,7 +43,7 @@ Record record = XML.partialParse(Class<Record> Record.class, String xml);
 
 ```groovy
 dependencies {
-    implementation 'io.lemadane:record-data:0.1.0-SNAPSHOT'
+    implementation 'com.lemadane:jax:0.1.0-SNAPSHOT'
 }
 ```
 
@@ -50,8 +51,8 @@ dependencies {
 
 ```xml
 <dependency>
-    <groupId>io.lemadane</groupId>
-    <artifactId>record-data</artifactId>
+    <groupId>com.lemadane</groupId>
+    <artifactId>jax</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
@@ -60,47 +61,148 @@ dependencies {
 
 ## Public API
 
-The library provides two thread-safe final utility classes:
+The library provides a thread-safe final utility class:
 
-### `io.lemadane.json2record.XML`
+### `com.lemadane.jax.Jax`
 
 ```java
-public final class XML {
-    public static <T extends Record> T parse(Class<T> recordType, String xml);
-    public static <T extends Record> T partialParse(Class<T> recordType, String xml);
-    public static String stringify(Record xmlRecord);
+public final class Jax {
+    public static <T> T toObject(String json, Class<T> targetType);
+    public static <T> T toPartialObject(String input, Class<T> targetType);
+    public static Document toDocument(String json);
+    public static String toJson(Object object);
+    public static String toXml(Object object);
 }
 ```
 
-### `io.lemadane.json2record.JSON`
+* Public methods reject `null` arguments with a clear `NullPointerException`.
+* `toObject(input, targetType)` detects JSON objects (starting with `{`) and XML documents (starting with `<`). For records, it uses strict mapping. For mutable classes, it first looks for a unique constructor whose retained parameter names match input properties/elements. Constructor-bound classes must be compiled with `-parameters`; if no constructor matches, a no-argument constructor is required. Remaining JSON properties and XML elements map through public one-argument setters annotated with `@JsonProperty`, named either after the property (`name(String value)`) or with JavaBean naming (`setName(String value)`). This opt-in avoids invoking unrelated business methods during deserialization. Public instance fields remain supported for XML mapping. Nested POJOs, records, and list/array values are supported. Unmapped JSON properties or XML elements raise mapping exceptions.
+* `toPartialObject(input, targetType)` provides partial mapping for either records or mutable classes. It ignores undeclared properties/elements recursively. Missing record components use partial-mode defaults; missing mutable-class properties retain constructor or Java defaults. Present but invalid values still fail mapping.
 
 ```java
-public final class JSON {
-    public static <T extends Record> T parse(Class<T> recordType, String json);
-    public static <T extends Record> T partialParse(Class<T> recordType, String json);
-    public static String stringify(Record jsonRecord);
+public class Person {
+    String name;
+    int age;
+
+    public String name() { return name; }
+    @JsonProperty
+    public void name(String value) { name = value; }
+    public int age() { return age; }
+    @JsonProperty
+    public void age(int value) { age = value; }
 }
+
+Person person = Jax.toObject("{\"name\":\"Ada\",\"age\":37}", Person.class);
 ```
 
-* All public methods reject `null` arguments with a clear `NullPointerException`.
-* Target types passed to `parse()` or `partialParse()` must be Java records; ordinary classes are rejected with a `RecordConstructionException`.
+Import `com.lemadane.jax.JsonProperty` to opt in setter methods for either JSON or XML mapping. This restriction applies consistently regardless of the input format detected by `Jax.toObject`.
+
+For constructor-bound classes, compile the class with `-parameters` so Jax can match constructor arguments to input property names:
+
+```shell
+javac -parameters Person.java
+```
+
+For XML-to-POJO mapping, use public fields or public one-argument setters annotated with `@JsonProperty`, named after the property (`name(String value)`) or using JavaBean naming (`setName(String value)`):
+
+```java
+public class PersonXml {
+    public String name;
+    public int age;
+    public AddressXml address;
+}
+
+public class AddressXml {
+    public String city;
+}
+
+PersonXml personFromXml = Jax.toObject(
+        "<PersonXml><name>Ada</name><age>37</age><address><city>London</city></address></PersonXml>",
+        PersonXml.class);
+```
+
+For namespace-prefixed XML elements, encode `:` as `$colon$` in Java class, field, or constructor-parameter names. Other name characters follow the same `DataNameCodec` convention (`-` becomes `$hyphen$`, for example):
+
+```java
+public class fxg$colon$Person {
+    public String fxg$colon$first$hyphen$name;
+}
+
+fxg$colon$Person person = Jax.toObject(
+        "<fxg:Person xmlns:fxg=\"urn:example\"><fxg:first-name>Ada</fxg:first-name></fxg:Person>",
+        fxg$Person.class);
+```
+
+`toDocument(json)` returns Jax's own insertion-ordered `Document`, a map from JSON property names to inferred Java values. Nested objects become `Document` instances, arrays become lists, and JSON primitives become `String`, `Boolean`, `Integer`, `Long`, `BigDecimal`, or `null`. Integral numbers infer to `Integer`, then `Long`, and otherwise `BigDecimal`; decimal or exponent-form numbers infer to `BigDecimal`.
+
+```java
+Document document = Jax.toDocument("{\"name\":\"Ada\",\"age\":37,\"address\":{\"city\":\"London\"}}");
+String name = (String) document.get("name");
+int age = (Integer) document.get("age");
+Document address = (Document) document.get("address");
+String city = (String) address.get("city");
+```
+
+`toJson()` and `toXml()` serialize either a Java record or a POJO. Record components are read through their accessors; POJO properties are read from public fields or public no-argument accessors. Private fields without a public accessor and static fields are ignored. Nested records and POJOs are serialized recursively. Collections and arrays are written as JSON arrays; for XML, each collection or array item is written as a repeated child element.
+
+JSON and XML parsing enforce a maximum nesting depth of 256. Numeric conversions from JSON numbers, JSON strings, XML text, and XML attributes are limited to 1,024 input characters and exponent magnitude 10,000, before constructing or expanding large integer values. Conversions to `float` and `double` reject non-finite results. XML serialization rejects characters not permitted by XML 1.0 and uses character references for tabs and line breaks in attributes.
+
+XML collection serialization uses the reserved attributes `jax-empty-list="true"` for an empty collection and `jax-null="true"` for a null collection item. The XML mapper recognizes these markers when reading collections and arrays, allowing strict round trips to preserve empty collections and null list entries.
+
+## Performance Benchmarks
+
+The JMH suite benchmarks parse/serialize/parse round trips for strict and partial
+JSON/XML mapping, inferred JSON documents in a JSON round trip, and JSON/XML
+serialization of both records and POJOs. Fixtures include five levels of nested
+objects; XML fixtures include attributes, namespaces, and special element names.
+Run it with:
+
+```shell
+./gradlew jmh
+```
+
+The default configuration uses three warmup iterations and five measurement iterations
+of one second each, with one fork. Results are reported in microseconds per operation
+and written in JMH JSON format to `build/results/jmh/results.json`.
+
+### Sample Results
+
+The following results are from one run of the five-level fixtures (JDK 25.0.2,
+JMH 1.36). `±` is the JMH 99.9% confidence error:
+
+| Benchmark | Average time (µs/op) |
+|---|---:|
+| `toDocumentJsonRoundTrip` | 33.943 ± 21.622 |
+| `toJsonPojoRoundTrip` | 39.666 ± 44.619 |
+| `toJsonRecordRoundTrip` | 16.631 ± 2.274 |
+| `toObjectJsonRoundTrip` | 38.275 ± 14.893 |
+| `toObjectXmlRoundTrip` | 548.564 ± 1347.661 |
+| `toPartialObjectJsonRoundTrip` | 31.798 ± 13.307 |
+| `toPartialObjectXmlRoundTrip` | 281.357 ± 483.888 |
+| `toXmlPojoRoundTrip` | 185.662 ± 419.079 |
+| `toXmlRecordRoundTrip` | 88.825 ± 202.631 |
+
+These are illustrative, environment-specific measurements, not performance guarantees.
+The benchmark JVM had an instrumentation agent attached, and the wide confidence errors
+show that these results are noisy; use repeated runs on a controlled machine for comparisons.
 
 ---
 
 ## Strict vs. Partial Parsing
 
-### Strict Mode (`XML.parse()` / `JSON.parse()`)
+### Strict Mode (`Jax.toObject(input, recordType)`)
 Enforces strict 1-to-1 structural completeness:
 * Throws an exception if a record component has no matching XML element or JSON property (`MissingDataException`).
 * Throws an exception if an undeclared XML element or JSON property is encountered (`ExcessDataException`).
 * Validates root XML element name against the target simple record name.
 * Rejects duplicate XML child elements for non-List components.
 * Rejects duplicate JSON object keys (`JsonMappingException`).
+* Rejects JSON documents nested more than 256 object/array levels deep with `JsonMappingException`.
 
-### Partial Mode (`XML.partialParse()` / `JSON.partialParse()`)
-Selective mapping into declared components:
-* Maps XML elements and JSON properties matching declared record components.
-* Ignores undeclared elements and properties.
+### Partial Mode (`Jax.toPartialObject(input, targetType)`)
+Selective mapping into declared record components or mutable-class properties:
+* Maps XML elements and JSON properties matching declared components, `@JsonProperty`-annotated setters, or supported public fields.
+* Ignores undeclared elements and properties, including in nested objects.
 * Missing components default to standard defaults:
   * Reference types -> `null`
   * `Optional<T>` -> `Optional.empty()`
@@ -110,35 +212,55 @@ Selective mapping into declared components:
   * `float`, `double` -> `0.0f` / `0.0d`
   * `char` -> `'\0'`
 * Present but malformed values still throw a `TypeConversionException`.
+* Integer conversions reject fractional values and values outside the target type's range.
 
 ---
 
-## XML Static-Field Attribute Mapping
+## XML Attribute Mapping
 
-XML attributes map to **matching mutable static fields** declared directly on the record class representing that element.
-
-> [!WARNING]
-> **Shared-State Warning**: Static fields in Java are shared across all instances of a class within a ClassLoader. Subsequent parses of XML containing attributes into the same record class will replace previously stored static field values.
-
-Example record with XML attribute mapping:
+For mutable POJOs, annotate instance fields with `@XmlAttribute` to map attributes per object instance. The annotation may provide an explicit XML name; otherwise the annotated Java field name is decoded with `DataNameCodec`. Constructor parameters may also be annotated, enabling immutable constructor-bound classes. Annotated fields are serialized as attributes by `Jax.toXml()` and are not treated as child elements.
 
 ```java
-public record RestaurantOrderEvent(
-        KitchenOrderScan KitchenOrderScan,
-        PlaceHolder PlaceHolder
-) {
-    private static String Version;
+public class PersonXml {
+    @XmlAttribute
+    String id;
 
-    public static String version() {
-        return Version;
-    }
+    @XmlAttribute("xml:version")
+    int version;
+
+    public String name;
 }
+
+PersonXml person = Jax.toObject(
+        "<PersonXml id=\"A1\" xml:version=\"1\"><name>Ada</name></PersonXml>",
+        PersonXml.class);
 ```
 
-* Supported field visibilities: `public`, `protected`, package-private, and `private static`.
-* Field must not be `final` when parsing needs to assign it.
+XML attributes are never read from or written to record static fields. Use a mutable POJO with `@XmlAttribute` fields or annotated constructor parameters for per-instance XML attributes. Prefixed XML names require an explicit namespace declaration; the writer throws `XmlMappingException` rather than emitting unbound prefixes.
+
+### Command-line source generation
+
+The executable JAR can generate a Java record, mutable POJO, or mutable POJO with an all-fields
+constructor from a JSON or XML sample. The generated source is written beside the input file, named
+from the input filename, and has no package declaration so you can move it to your chosen package.
+It refuses to overwrite an existing Java source file.
+
+```shell
+java -jar jax-0.1.0-SNAPSHOT.jar --create record person.xml
+java -jar jax-0.1.0-SNAPSHOT.jar --create pojo person.json
+java -jar jax-0.1.0-SNAPSHOT.jar --create with-constructor person.json
+```
+
+Generated mutable classes have `name()` getters and `name(value)` setters (without `get`/`set`
+prefixes). POJOs use a no-argument constructor; `with-constructor` also generates an all-fields
+constructor. Nested objects become nested Java types, repeated XML elements and JSON arrays become
+`List` properties, and XML attributes are marked with `@XmlAttribute`. For XML mapping with
+`Jax.toObject`, compile constructor-bound classes with `-parameters`, or use the generated no-arg
+constructor and setters. XML samples with attributes cannot be generated as records because record
+mapping does not populate per-instance attributes; choose `pojo` or `with-constructor` to preserve
+them as instance properties.
+
 * Unmatched XML attributes are ignored and do not trigger excess data errors during strict parsing.
-* JSON object properties **never** populate static fields.
 
 ---
 
@@ -148,7 +270,7 @@ XML element/attribute names and JSON keys containing characters problematic in J
 
 | External Character | Reversible Identifier Escape | Example External Name | Encoded Java Component / Type |
 | :--- | :--- | :--- | :--- |
-| `:` | `$` | `fxg:FacilityInboundEvent` | `fxg$FacilityInboundEvent` |
+| `:` | `$colon$` | `fxg:FacilityInboundEvent` | `fxg$colon$FacilityInboundEvent` |
 | `-` | `$hyphen$` | `Facility-ID` | `Facility$hyphen$ID` |
 | `.` | `$dot$` | `Facility.ID` | `Facility$dot$ID` |
 | `space` | `$space$` | `display name` | `display$space$name` |
@@ -186,13 +308,7 @@ XML element/attribute names and JSON keys containing characters problematic in J
 public record RestaurantOrderEvent(
         KitchenOrderScan KitchenOrderScan,
         PlaceHolder PlaceHolder
-) {
-    private static String Version;
-
-    public static String version() {
-        return Version;
-    }
-}
+) {}
 
 public record KitchenOrderScan(
         String RestaurantID,
@@ -200,13 +316,7 @@ public record KitchenOrderScan(
         String OrderTicketNumber,
         OrderTimestamp OrderTimestamp,
         PlaceHolder PlaceHolder
-) {
-    private static String Version;
-
-    public static String version() {
-        return Version;
-    }
-}
+) {}
 
 public record OrderTimestamp(
         String Date,
@@ -220,10 +330,9 @@ public record PlaceHolder() {}
 **Usage:**
 
 ```java
-final var event = XML.parse(RestaurantOrderEvent.class, xml);
+final var event = Jax.toObject(xml, RestaurantOrderEvent.class);
 final String restaurantID = event.KitchenOrderScan().RestaurantID();
-final String version = RestaurantOrderEvent.version();
-final String outputXml = XML.stringify(event);
+final String outputXml = Jax.toXml(event);
 ```
 
 ### 2. Namespaced XML Mapping
@@ -243,13 +352,7 @@ final String outputXml = XML.stringify(event);
 ```java
 public record rest$RestaurantOrderEvent(
         rest$KitchenOrderScan rest$KitchenOrderScan
-) {
-    private static String xmlns$rest;
-
-    public static String namespace() {
-        return xmlns$rest;
-    }
-}
+) {}
 
 public record rest$KitchenOrderScan(
         String rest$RestaurantID
@@ -259,10 +362,13 @@ public record rest$KitchenOrderScan(
 **Usage:**
 
 ```java
-final var event = XML.parse(rest$RestaurantOrderEvent.class, xml);
+final var event = Jax.toObject(xml, rest$RestaurantOrderEvent.class);
 final String restaurantID = event.rest$KitchenOrderScan().rest$RestaurantID();
-final String ns = rest$RestaurantOrderEvent.namespace(); // "urn:restaurant:kitchen"
 ```
+
+Prefixed XML input maps to the `$`-encoded record component names. Record serialization does not
+read static fields to create namespace declarations; `toXml()` rejects prefixed names unless the
+namespace is supplied by another supported mapping path, such as a POJO `@XmlAttribute("xmlns:rest")`.
 
 ### 3. JSON Mapping
 
@@ -301,8 +407,8 @@ public record KitchenOrderScan(
 **Usage:**
 
 ```java
-final var event = JSON.parse(RestaurantOrderEvent.class, json);
-final String outputJson = JSON.stringify(event);
+final var event = Jax.toObject(json, RestaurantOrderEvent.class);
+final String outputJson = Jax.toJson(event);
 ```
 
 ---
@@ -321,12 +427,8 @@ final String outputJson = JSON.stringify(event);
 
 ## XML Parsing Security Policy
 
-Configured defensively by default:
-* External general entities (`external-general-entities`) disabled.
-* External parameter entities (`external-parameter-entities`) disabled.
-* `DOCTYPE` declarations disallowed (`disallow-doctype-decl`).
-* Secure processing feature enabled (`XMLConstants.FEATURE_SECURE_PROCESSING`).
-* XInclude & entity expansion disabled.
+XML is streamed with the JDK StAX API into Jax-owned internal `XmlElement` nodes; W3C DOM is not used.
+The parser disables DTD processing and external entities, and rejects `DOCTYPE` declarations.
 
 ---
 
