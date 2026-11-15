@@ -12,7 +12,7 @@ import com.lemadane.jax.exceptions.XmlMappingException;
 
 final class XmlTextSupport {
 
-  private XmlTextSupport() {
+  XmlTextSupport() {
   }
 
   static Field field(Class<?> type) {

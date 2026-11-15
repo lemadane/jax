@@ -648,11 +648,11 @@ The [end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) generat
 
 - For JSON, the input filename determines the top-level Java name: `order.json` produces `Order.java`. For XML, the CLI uses the actual root element name, preserving case and encoding special characters: `<Order>` produces `Order.java`, and `<log:GlobalSupplyChainManifest>` produces `log$colon$GlobalSupplyChainManifest.java`, regardless of the input filename.
 - Every generated public class or record is written to its own `.java` file beside the input, with no package declaration. Move the complete set into your application and add the same package declaration to each file. Existing output paths are checked before any files are written, and existing files are never overwritten.
-- Types are inferred from the sample. Review the generated model for values the sample does not cover, especially identifiers that must remain strings.
+- Types are inferred from the sample. Review the generated model for values the sample does not cover, especially identifiers that must remain strings. JSON numeric arrays use every non-null entry to select a common numeric type (`int`, `long`, `BigInteger`, or `BigDecimal`), so an integer followed by a fractional value generates a `List<BigDecimal>` rather than truncating or rejecting that value.
 - Nested objects become separate top-level types; JSON arrays and repeated XML elements become `List` properties. Compile the generated files together, or use `javac -sourcepath .` from their directory so referenced source files are compiled automatically.
 - If inferred type names repeat, the generator adds a numeric suffix such as `Address2` and updates references. Names are compared without case to avoid filename conflicts on Windows and macOS. Names used by Java scalar types or JAX annotations are reserved; rename the JSON input file or XML root element if its root type conflicts.
 - Use a separate input directory for each independent model to avoid clashes with previously generated types.
-- Mutable classes have `name()` getters and `name(value)` setters annotated with `@JsonProperty`. Compile constructor-bound classes with `-parameters` so JAX can match constructor arguments.
+- Mutable classes have `name()` getters and `name(value)` setters annotated with `@JsonProperty`. Compile constructor-bound classes with `-parameters` so JAX can match constructor arguments. Empty objects generated with `with-constructor` have a single no-argument constructor; nonempty models also have an all-fields constructor.
 - XML prefixes and special characters use the [name-encoding convention](#special-character-encoding), such as `$colon$` for `:` and `$hyphen$` for `-`.
 
 ### XML elements with attributes and text
@@ -727,7 +727,7 @@ The [CLI end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) gen
 
 ### What the API round-trip tests compare
 
-**Both complete fixtures passed their public-API round-trip tests.** The latest verified run passed all six dedicated cases below, plus the full suite of **345 tests** with **97.19% line coverage**.
+**Both complete fixtures passed their public-API round-trip tests.** The latest verified run passed all six dedicated cases below, plus the full suite of **362 tests** with **97.11% line coverage**.
 
 | Fixture | API/model style | Verified result |
 | --- | --- | --- |
@@ -1316,9 +1316,9 @@ The latest local Java 17 verification passed the full build, Checkstyle, and cov
 
 | Check | Result |
 | --- | --- |
-| Tests | 345 passed; no failures or skipped tests |
-| Line coverage | 97.19% (required: 97%) |
-| Branch coverage | 91.51% |
+| Tests | 362 passed; no failures or skipped tests |
+| Line coverage | 97.11% (required: 97%) |
+| Branch coverage | 91.53% |
 
 Generation tests compile every emitted file and verify that all generated types are top-level. They cover all three model styles, JSON and XML round trips, XML attributes and text, duplicate type names, protection of existing files, and the complex organization payload. The complete supply-chain XML is generated and round-trip tested with both POJO styles; XML records with attributes remain unsupported. Dedicated public-API tests also compile the saved JSON and XML models and compare both complete fixtures independently of CLI generation. These figures describe the verified revision; rerun the build after changes for current results.
 

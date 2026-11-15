@@ -3,7 +3,7 @@ package com.lemadane.jax;
 /** Test comparison shared by API and CLI round trips. */
 public final class XmlRoundTripSnapshot {
 
-  private XmlRoundTripSnapshot() {
+  XmlRoundTripSnapshot() {
   }
 
   // Compare every qualified element name, attribute and leaf value. Ignore formatting
@@ -19,7 +19,7 @@ public final class XmlRoundTripSnapshot {
     return values;
   }
 
-  private static void collectXmlValues(org.w3c.dom.Element element, String path, java.util.Map<String, String> values) {
+  static void collectXmlValues(org.w3c.dom.Element element, String path, java.util.Map<String, String> values) {
     path += "/" + element.getTagName();
     values.put(path, "element");
     for (int i = 0; i < element.getAttributes().getLength(); i++) {

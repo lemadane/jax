@@ -29,6 +29,21 @@ class JavaSourceGeneratorHelperTest {
     assertThat(JavaSourceGenerator.scalarFromText(input).scalar).isEqualTo(expected);
   }
 
+  @ParameterizedTest
+  @CsvSource(delimiter = '|', value = {
+      "[1,2.5]|java.math.BigDecimal", "[2.5,1]|java.math.BigDecimal",
+      "[1,2147483648]|long", "[2147483648,1]|long",
+      "[1,9223372036854775808]|java.math.BigInteger",
+      "[9223372036854775808,1]|java.math.BigInteger",
+      "[9223372036854775808,0.125]|java.math.BigDecimal",
+      "[null,1,2.5,null]|java.math.BigDecimal", "[null,null]|String",
+      "[true,false]|boolean", "[1,2,3]|int"
+  })
+  void infersArrayTypesFromEveryNonNullElement(String input, String expected) {
+    var array = (JsonParser.JsonNode.JsonArrayNode) JsonParser.parse(input);
+    assertThat(JavaSourceGenerator.mergeValues("Value", array.elements()).scalar).isEqualTo(expected);
+  }
+
   @Test
   void encodesKeywordsAndEscapesJavaStrings() {
     for (String keyword : JavaSourceGenerator.JAVA_KEYWORDS) {

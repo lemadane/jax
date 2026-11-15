@@ -164,17 +164,16 @@ final class JavaSourceGenerator {
   }
 
   static TypeSchema mergeValues(String name, List<JsonParser.JsonNode> values) {
-    JsonParser.JsonNode first = values.get(0);
-    if (first instanceof JsonParser.JsonNode.JsonObjectNode firstObject) {
-      Schema merged = jsonObject(name, firstObject);
-      for (int i = 1; i < values.size(); i++) {
-        if (values.get(i) instanceof JsonParser.JsonNode.JsonObjectNode nextObject) {
-          mergeObject(merged, jsonObject(name, nextObject));
-        }
+    TypeSchema merged = null;
+    for (JsonParser.JsonNode value : values) {
+      // Null contributes no type information; List elements are boxed already.
+      if (value instanceof JsonParser.JsonNode.JsonNullNode) {
+        continue;
       }
-      return TypeSchema.object(merged);
+      TypeSchema next = jsonType(name, value);
+      merged = merged == null ? next : mergeTypes(merged, next);
     }
-    return jsonType(name, first);
+    return merged == null ? TypeSchema.scalar("String") : merged;
   }
 
   static void mergeObject(Schema target, Schema source) {
@@ -205,7 +204,7 @@ final class JavaSourceGenerator {
       return first;
     }
     if (first.object != null || second.object != null) {
-      throw new DataMappingException("Cannot combine scalar and object samples for the same XML property.");
+      throw new DataMappingException("Cannot combine scalar and object samples for the same property.");
     }
     if (first.scalar.equals(second.scalar)) {
       return first;
@@ -343,7 +342,7 @@ final class JavaSourceGenerator {
         for (int i = 1; i < occurrences.size(); i++) {
           XmlNode next = occurrences.get(i);
           if (!next.attributes.isEmpty() || !next.children.isEmpty()) {
-            throw new DataMappingException("Cannot combine scalar and object samples for the same XML property.");
+            throw new DataMappingException("Cannot combine scalar and object samples for the same property.");
           }
           field.type = mergeTypes(field.type, scalarFromText(next.text.toString()));
         }
@@ -408,14 +407,16 @@ final class JavaSourceGenerator {
     if (style == Style.WITH_CONSTRUCTOR) {
       source.append('\n').append("    public ").append(schema.name).append("() {\n")
           .append("    }\n");
-      source.append('\n').append("    public ").append(schema.name).append('(');
-      appendParameters(source, schema, false);
-      source.append(") {\n");
-      for (FieldSchema field : schema.fields.values()) {
-        source.append("        this.").append(field.name).append(" = ").append(field.name)
-            .append(";\n");
+      if (!schema.fields.isEmpty()) {
+        source.append('\n').append("    public ").append(schema.name).append('(');
+        appendParameters(source, schema, false);
+        source.append(") {\n");
+        for (FieldSchema field : schema.fields.values()) {
+          source.append("        this.").append(field.name).append(" = ").append(field.name)
+              .append(";\n");
+        }
+        source.append("    }\n");
       }
-      source.append("    }\n");
     }
     for (FieldSchema field : schema.fields.values()) {
       source.append('\n').append("    public ").append(field.typeName()).append(' ')

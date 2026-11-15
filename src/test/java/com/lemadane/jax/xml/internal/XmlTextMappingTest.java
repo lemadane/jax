@@ -111,7 +111,7 @@ class XmlTextMappingTest {
 
   public static class Amount {
     @XmlAttribute public String currency;
-    @XmlText private String value;
+    @XmlText String value;
     public String value() {
       return value;
     }

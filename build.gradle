@@ -109,7 +109,7 @@ publishing {
             pom {
                 name = 'jax'
                 description = 'Java XML and JSON Record Mapping Library'
-                url = 'https://github.com/lemadane/jaxtor'
+                url = 'https://github.com/lemadane/jax'
                 licenses {
                     license {
                         name = 'The MIT License'
@@ -123,9 +123,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection = 'scm:git:git://github.com/lemadane/jaxtor.git'
-                    developerConnection = 'scm:git:ssh://github.com/lemadane/jaxtor.git'
-                    url = 'https://github.com/lemadane/jaxtor'
+                    connection = 'scm:git:git://github.com/lemadane/jax.git'
+                    developerConnection = 'scm:git:ssh://github.com/lemadane/jax.git'
+                    url = 'https://github.com/lemadane/jax'
                 }
             }
         }
@@ -133,7 +133,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/" + (System.getenv("GITHUB_REPOSITORY") ?: "lemadane/jaxtor"))
+            url = uri("https://maven.pkg.github.com/" + (System.getenv("GITHUB_REPOSITORY") ?: "lemadane/jax"))
             credentials {
                 username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user")
                 password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key")

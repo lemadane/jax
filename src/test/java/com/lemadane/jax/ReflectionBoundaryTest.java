@@ -8,7 +8,7 @@ import com.lemadane.jax.exceptions.XmlMappingException;
 import static org.assertj.core.api.Assertions.*;
 
 class ReflectionBoundaryTest {
-  private static class HiddenSetter {
+  static class HiddenSetter {
     @JsonProperty
     public void value(String value) { /* Non-public declaring class. */ }
   }

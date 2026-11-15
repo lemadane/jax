@@ -20,8 +20,8 @@ class MappingFailureRegressionTest {
   Path directory;
 
   public static class Setters {
-    private int[] array;
-    private List<Integer> list;
+    int[] array;
+    List<Integer> list;
 
     @JsonProperty
     public void array(int[] value) {

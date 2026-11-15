@@ -313,6 +313,57 @@ class JaxCliE2E {
     assertThat(xmlValues(Jax.toXml(reread))).isEqualTo(xmlValues(output));
   }
 
+  @ParameterizedTest(name = "Mixed numeric arrays round trip as {0}")
+  @ValueSource(strings = {"record", "pojo", "with-constructor"})
+  void widensNumericArraysWithoutLosingValues(String style) throws Exception {
+    String json = """
+        {
+          "values": [1, 2.5],
+          "reversed": [2.5, 1],
+          "longs": [1, 2147483648],
+          "integers": [1, 9223372036854775808],
+          "precise": [9223372036854775808, 0.1234567890123456789],
+          "nullable": [null, 1, 2.5, null],
+          "allNull": [null, null],
+          "nested": [{"values": [1, 2]}, {"values": [2.5, 3]}]
+        }
+        """;
+    Class<?> type = compileGenerated(generatedSource(runCli(style, "json", json)));
+    Object model = Jax.toObject(json, type);
+    List<?> values = (List<?>) type.getMethod("values").invoke(model);
+    assertThat(values).isEqualTo(List.of(new BigDecimal("1"), new BigDecimal("2.5")));
+    String output = Jax.toJson(model);
+    assertThat(Jax.toDocument(output)).usingRecursiveComparison()
+        .withComparatorForType((left, right) -> new BigDecimal(left.toString())
+            .compareTo(new BigDecimal(right.toString())), Number.class)
+        .isEqualTo(Jax.toDocument(json));
+    assertThat(Jax.toDocument(Jax.toJson(Jax.toObject(output, type)))).isEqualTo(Jax.toDocument(output));
+  }
+
+  @ParameterizedTest(name = "Empty constructor model: {0}")
+  @ValueSource(strings = {"{}", "{\"child\":{},\"items\":[{},{}]}"})
+  void emptyJsonObjectsGenerateCompilableConstructorModels(String json) throws Exception {
+    Class<?> type = compileGenerated(generatedSource(runCli("with-constructor", "json", json)));
+    Object model = Jax.toObject(json, type);
+    String output = Jax.toJson(model);
+    assertThat(Jax.toDocument(output)).isEqualTo(Jax.toDocument(json));
+    assertThat(Jax.toDocument(Jax.toJson(Jax.toObject(output, type)))).isEqualTo(Jax.toDocument(json));
+    if (json.equals("{}")) {
+      assertThat(type.getDeclaredConstructors()).hasSize(1);
+      assertThat(type.getDeclaredConstructor().newInstance()).isNotNull();
+    }
+  }
+
+  @Test
+  void emptyXmlRootGeneratesOneNoArgumentConstructor() throws Exception {
+    String xml = "<Person/>";
+    Class<?> type = compileGenerated(generatedSource(runCli("with-constructor", "xml", xml)));
+    assertThat(type.getDeclaredConstructors()).hasSize(1);
+    String output = Jax.toXml(Jax.toObject(xml, type));
+    assertThat(xmlValues(output)).isEqualTo(xmlValues(xml));
+    assertThat(xmlValues(Jax.toXml(Jax.toObject(output, type)))).isEqualTo(xmlValues(xml));
+  }
+
   CliResult runCli(String style, String extension, String content) throws Exception {
     Path input = tempDir.resolve("person." + extension);
     Files.writeString(input, content, StandardCharsets.UTF_8);
