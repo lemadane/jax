@@ -1,0 +1,124 @@
+{
+  "apiVersion": "3.4.2-beta",
+  "requestId": "req_98f7a6d5-4c3b-2a1e-0f9e-8d7c6b5a4f3e",
+  "timestamp": "2026-11-15T09:49:12.402Z",
+  "environment": {
+    "region": "ap-southeast-1",
+    "cluster": {
+      "id": "prod-k8s-alpha-09",
+      "nodes": 14,
+      "autoScaling": {
+        "enabled": true,
+        "thresholds": {
+          "cpuPercent": 78.5,
+          "memoryPercent": 82.0
+        }
+      }
+    }
+  },
+  "organization": {
+    "orgId": "ORG-88412",
+    "name": "Aether Dynamics Corp",
+    "isVerified": true,
+    "taxIdentifier": null,
+    "departments": [
+      {
+        "deptId": "DEPT-ENG-01",
+        "name": "Core Infrastructure",
+        "budget": {
+          "currency": "USD",
+          "allocated": 1450000.00,
+          "spent": 982340.55,
+          "costCenters": [
+            {
+              "code": "CC-101",
+              "allocations": [
+                {
+                  "category": "Cloud Compute",
+                  "monthlyLimits": [120000, 125000, 130000],
+                  "vendors": [
+                    {
+                      "vendorId": "V-AWS",
+                      "name": "Amazon Web Services",
+                      "contracts": [
+                        {
+                          "contractId": "CNT-2026-99A",
+                          "active": true,
+                          "sla": {
+                            "uptimeGuarantee": 99.99,
+                            "supportTier": "Enterprise",
+                            "escalationContacts": [
+                              {
+                                "role": "Technical Account Manager",
+                                "name": "Elena Rostova",
+                                "channels": {
+                                  "email": "e.rostova@example.com",
+                                  "slackWebhook": "[https://slack.com](https://slack.com)",
+                                  "pagerDutyIds": ["PD-991", "PD-992"]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "projects": [
+          {
+            "projectId": "PRJ-NEXUS",
+            "status": "IN_PROGRESS",
+            "tags": ["distributed-systems", "rust", "zero-trust"],
+            "milestones": [
+              {
+                "id": "M1",
+                "title": "Consensus Engine Refactor",
+                "completed": true,
+                "deliverables": [
+                  {
+                    "artifact": "raft-core-v2.tar.gz",
+                    "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "metrics": {
+                      "latencyMs": {
+                        "p50": 1.2,
+                        "p95": 4.8,
+                        "p99": 11.4
+                      },
+                      "throughputRps": 142500
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "M2",
+                "title": "Multi-Region Failover",
+                "completed": false,
+                "blockers": [
+                  {
+                    "issueId": "JIRA-4410",
+                    "severity": "CRITICAL",
+                    "assignedTo": {
+                      "employeeId": "EMP-304",
+                      "name": "Marcus Vance",
+                      "onCall": true
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "pagination": {
+    "page": 1,
+    "pageSize": 50,
+    "hasMore": false,
+    "nextCursor": null
+  }
+}

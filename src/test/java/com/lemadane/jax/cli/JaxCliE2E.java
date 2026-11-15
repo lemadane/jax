@@ -1,7 +1,10 @@
 package com.lemadane.jax.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.InputStream;
+import java.math.BigDecimal;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -17,8 +20,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.lemadane.jax.Jax;
+import com.lemadane.jax.Document;
+import com.lemadane.jax.exceptions.MissingDataException;
 
 class JaxCliE2E {
 
@@ -157,6 +164,49 @@ class JaxCliE2E {
     Object address = type.getMethod("address").invoke(person);
     assertThat(address.getClass().getMethod("city").invoke(address)).isEqualTo("London");
     assertThat(type.getMethod("tag").invoke(person)).isEqualTo(List.of("math", "computing"));
+  }
+
+  @DisplayName("java -jar generates models that round-trip a deeply nested organization payload")
+  @ParameterizedTest(name = "{0}")
+  @ValueSource(strings = {"record", "pojo", "with-constructor"})
+  void roundTripsComplexOrganizationFromJsonUsingJarCommand(String style) throws Exception {
+    String json;
+    try (InputStream fixture = getClass().getResourceAsStream("complex-organization.json")) {
+      assertThat(fixture).as("complex organization JSON fixture").isNotNull();
+      json = new String(fixture.readAllBytes(), StandardCharsets.UTF_8);
+    }
+
+    CliResult result = runCli(style, "json", json);
+    Class<?> type = compileGenerated(generatedSource(result));
+    Object model;
+    if (type.isRecord()) {
+      // Milestones have different shapes: M1 has deliverables, M2 has blockers.
+      // The generated record contains both fields, so missing fields require partial mapping.
+      assertThatThrownBy(() -> Jax.toObject(json, type)).isInstanceOf(MissingDataException.class);
+      model = Jax.toPartialObject(json, type);
+    } else {
+      model = Jax.toObject(json, type);
+    }
+
+    Document expected = Jax.toDocument(json);
+    Document organization = (Document) expected.get("organization");
+    Document department = (Document) ((List<?>) organization.get("departments")).get(0);
+    Document project = (Document) ((List<?>) department.get("projects")).get(0);
+    List<?> milestones = (List<?>) project.get("milestones");
+    // Serialization includes the missing properties with the documented mapping defaults.
+    Object missingList = type.isRecord() ? List.of() : null;
+    ((Document) milestones.get(0)).put("blockers", missingList);
+    ((Document) milestones.get(1)).put("deliverables", missingList);
+
+    String serialized = Jax.toJson(model);
+    assertThat(Jax.toDocument(serialized)).usingRecursiveComparison()
+        .withComparatorForType((left, right) -> new BigDecimal(left.toString())
+            .compareTo(new BigDecimal(right.toString())), Number.class)
+        .isEqualTo(expected);
+
+    // After defaults have been serialized, the complete model supports strict re-reading.
+    Object reread = Jax.toObject(serialized, type);
+    assertThat(Jax.toDocument(Jax.toJson(reread))).isEqualTo(Jax.toDocument(serialized));
   }
 
   CliResult runCli(String style, String extension, String content) throws Exception {

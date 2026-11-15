@@ -15,6 +15,7 @@ Generate Java records and POJOs from JSON or XML samples, then use them to read 
 ## Contents
 
 - [Generate Java classes from JSON or XML](#generate-java-classes-from-json-or-xml)
+- [Complex JSON round trip](#complex-organization-json-round-trip)
 - [Troubleshooting](#troubleshooting)
 - [Installation](#installation)
 - [Quick start](#quick-start)
@@ -282,6 +283,272 @@ java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create pojo customer.json
 # Or include an all-fields constructor:
 java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create with-constructor customer.json
 ```
+
+### Complex organization JSON round trip
+
+Generate a Java model from an organization response, read its nested data, and write it back to JSON.
+
+| Sample data | What it demonstrates |
+| --- | --- |
+| Environment and cluster settings | Nested objects, booleans, and decimal thresholds |
+| Departments, budgets, and vendor contracts | Multiple levels of objects and lists |
+| SLA contacts and notification channels | Deeply nested strings and scalar lists |
+| Projects, milestones, and deliverables | List items with different fields |
+| Tax identifier and pagination cursor | Explicit `null` values |
+
+**Before you start:** build the executable JAR using the instructions above, then keep your terminal in the repository root.
+
+#### 1. Prepare the input
+
+Start JShell:
+
+```shell
+jshell
+```
+
+Expand the sample and paste the Java snippet. It creates `organization-payload.json` in the current directory. The same payload is available as a [JSON file](src/test/resources/com/lemadane/jax/cli/complex-organization.json).
+
+<details>
+<summary><strong>View the complete JSON sample and file-creation snippet</strong></summary>
+
+```java
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+String json = """
+    {
+      "apiVersion": "3.4.2-beta",
+      "requestId": "req_98f7a6d5-4c3b-2a1e-0f9e-8d7c6b5a4f3e",
+      "timestamp": "2026-11-15T09:49:12.402Z",
+      "environment": {
+        "region": "ap-southeast-1",
+        "cluster": {
+          "id": "prod-k8s-alpha-09",
+          "nodes": 14,
+          "autoScaling": {
+            "enabled": true,
+            "thresholds": {
+              "cpuPercent": 78.5,
+              "memoryPercent": 82.0
+            }
+          }
+        }
+      },
+      "organization": {
+        "orgId": "ORG-88412",
+        "name": "Aether Dynamics Corp",
+        "isVerified": true,
+        "taxIdentifier": null,
+        "departments": [
+          {
+            "deptId": "DEPT-ENG-01",
+            "name": "Core Infrastructure",
+            "budget": {
+              "currency": "USD",
+              "allocated": 1450000.00,
+              "spent": 982340.55,
+              "costCenters": [
+                {
+                  "code": "CC-101",
+                  "allocations": [
+                    {
+                      "category": "Cloud Compute",
+                      "monthlyLimits": [120000, 125000, 130000],
+                      "vendors": [
+                        {
+                          "vendorId": "V-AWS",
+                          "name": "Amazon Web Services",
+                          "contracts": [
+                            {
+                              "contractId": "CNT-2026-99A",
+                              "active": true,
+                              "sla": {
+                                "uptimeGuarantee": 99.99,
+                                "supportTier": "Enterprise",
+                                "escalationContacts": [
+                                  {
+                                    "role": "Technical Account Manager",
+                                    "name": "Elena Rostova",
+                                    "channels": {
+                                      "email": "e.rostova@example.com",
+                                      "slackWebhook": "[https://slack.com](https://slack.com)",
+                                      "pagerDutyIds": ["PD-991", "PD-992"]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            "projects": [
+              {
+                "projectId": "PRJ-NEXUS",
+                "status": "IN_PROGRESS",
+                "tags": ["distributed-systems", "rust", "zero-trust"],
+                "milestones": [
+                  {
+                    "id": "M1",
+                    "title": "Consensus Engine Refactor",
+                    "completed": true,
+                    "deliverables": [
+                      {
+                        "artifact": "raft-core-v2.tar.gz",
+                        "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                        "metrics": {
+                          "latencyMs": {
+                            "p50": 1.2,
+                            "p95": 4.8,
+                            "p99": 11.4
+                          },
+                          "throughputRps": 142500
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "M2",
+                    "title": "Multi-Region Failover",
+                    "completed": false,
+                    "blockers": [
+                      {
+                        "issueId": "JIRA-4410",
+                        "severity": "CRITICAL",
+                        "assignedTo": {
+                          "employeeId": "EMP-304",
+                          "name": "Marcus Vance",
+                          "onCall": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "pagination": {
+        "page": 1,
+        "pageSize": 50,
+        "hasMore": false,
+        "nextCursor": null
+      }
+    }
+    """;
+Files.writeString(Path.of("organization-payload.json"), json);
+```
+
+</details>
+
+Exit JShell before running the next commands:
+
+```text
+/exit
+```
+
+#### 2. Generate the Java model
+
+```shell
+java -jar build/libs/jax-0.2.0-SNAPSHOT.jar --create record organization-payload.json
+```
+
+The CLI creates **`OrganizationPayload.java`** beside the input file, with nested records and lists inferred from the sample.
+
+The two milestones have different fields:
+
+| Milestone | Present in the input | Missing from the input |
+| --- | --- | --- |
+| `M1` | `deliverables` | `blockers` |
+| `M2` | `blockers` | `deliverables` |
+
+The generated milestone record contains both fields. Use `toPartialObject` for the first read so missing lists receive empty-list defaults. Present values are still validated.
+
+#### 3. Read and serialize the payload
+
+Save this complete program as **`ComplexJsonExample.java`** beside the generated file:
+
+```java
+import com.lemadane.jax.Jax;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public class ComplexJsonExample {
+    public static void main(String[] args) throws Exception {
+        String json = Files.readString(Path.of("organization-payload.json"));
+        OrganizationPayload payload = Jax.toPartialObject(json, OrganizationPayload.class);
+
+        System.out.println(payload.organization().name());
+        var milestones = payload.organization().departments().get(0)
+                .projects().get(0).milestones();
+        System.out.println(milestones.get(0).deliverables().size());
+        System.out.println(milestones.get(1).blockers().get(0).assignedTo().name());
+
+        String serialized = Jax.toJson(payload);
+        Files.writeString(Path.of("organization-output.json"), serialized);
+        OrganizationPayload reread = Jax.toObject(serialized, OrganizationPayload.class);
+        System.out.println(Jax.toDocument(Jax.toJson(reread))
+                .equals(Jax.toDocument(serialized)));
+    }
+}
+```
+
+The program writes `organization-output.json`, then reads it again using strict `toObject`. This second read succeeds because serialization includes the missing-list defaults.
+
+#### 4. Compile and run
+
+**Linux / macOS**
+
+```shell
+javac -parameters -cp build/libs/jax-0.2.0-SNAPSHOT.jar OrganizationPayload.java ComplexJsonExample.java
+java -cp ".:build/libs/jax-0.2.0-SNAPSHOT.jar" ComplexJsonExample
+```
+
+**Windows** — use the same `javac` command, then run:
+
+```shell
+java -cp ".;build/libs/jax-0.2.0-SNAPSHOT.jar" ComplexJsonExample
+```
+
+#### 5. Check the result
+
+Expected console output:
+
+```text
+Aether Dynamics Corp
+1
+Marcus Vance
+true
+```
+
+The final `true` confirms that reading and serializing the generated output produces equivalent JSON data.
+
+| Output file | Contents |
+| --- | --- |
+| `OrganizationPayload.java` | Generated records for the response and its nested data |
+| `organization-output.json` | Serialized response, including defaults for missing milestone lists |
+
+Numeric values are preserved, but their spelling or scale may change: `1450000.00` can serialize as `1450000`. Missing milestone lists are written as `[]`.
+
+<details>
+<summary><strong>Using a mutable class instead of a record</strong></summary>
+
+Choose `pojo` or `with-constructor` instead of `record` in the generation command. Move the existing generated source before trying another style; the CLI does not overwrite files.
+
+| Generation style | Initial mapping | Missing milestone lists |
+| --- | --- | --- |
+| `record` | `Jax.toPartialObject(json, OrganizationPayload.class)` | Empty lists |
+| `pojo` | `Jax.toObject(json, OrganizationPayload.class)` | `null` |
+| `with-constructor` | `Jax.toObject(json, OrganizationPayload.class)` | `null` |
+
+</details>
+
+The [end-to-end test](src/test/java/com/lemadane/jax/cli/JaxCliE2E.java) generates and compiles all three styles, compares the entire serialized payload against the expected values and defaults, and verifies strict re-reading.
 
 ### Generation conventions
 
